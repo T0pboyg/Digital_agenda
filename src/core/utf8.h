@@ -1,0 +1,11 @@
+#pragma once
+
+#include <cstddef>
+#include <string>
+#include <string_view>
+
+std::size_t utf8CodePointCount(std::string_view text);
+
+std::string utf8LastCodePoint(std::string_view text);
+
+bool utf8PopBack(std::string& text);
