@@ -13,7 +13,8 @@ enum class EventError
     InvalidTime,
     EmptyText,
     TextTooLong,
-    PastEvent
+    PastEvent,
+    EventNotFound
 };
 
 struct EventDraft

@@ -20,6 +20,14 @@ public:
         const DateTime& now
     );
 
+    EventError updateEvent(
+        std::uint32_t id,
+        const EventDraft& draft,
+        const DateTime& now
+    );
+
+    bool deleteEvent(std::uint32_t id);
+
     const Event* findEvent(std::uint32_t id) const;
     const std::vector<Event>& events() const;
 

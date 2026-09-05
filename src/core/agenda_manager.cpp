@@ -52,7 +52,7 @@ bool eventComesBefore(
         }
     }
 
-    return false;
+    return left.id < right.id;
 }
 }
 
@@ -89,6 +89,67 @@ CreateEventResult AgendaManager::createEvent(
         EventError::None,
         assignedId
     };
+}
+
+EventError AgendaManager::updateEvent(
+    std::uint32_t id,
+    const EventDraft& draft,
+    const DateTime& now
+)
+{
+    const auto iterator = std::find_if(
+        events_.begin(),
+        events_.end(),
+        [id](const Event& event)
+        {
+            return event.id == id;
+        }
+    );
+
+    if (iterator == events_.end())
+    {
+        return EventError::EventNotFound;
+    }
+
+    const EventError error =
+        validateDraft(draft, now);
+
+    if (error != EventError::None)
+    {
+        return error;
+    }
+
+    iterator->eventDate = draft.eventDate;
+    iterator->eventTime = draft.eventTime;
+    iterator->text = draft.text;
+    iterator->reminderSeen = false;
+
+    sortEvents();
+
+    return EventError::None;
+}
+
+bool AgendaManager::deleteEvent(
+    std::uint32_t id
+)
+{
+    const auto iterator = std::find_if(
+        events_.begin(),
+        events_.end(),
+        [id](const Event& event)
+        {
+            return event.id == id;
+        }
+    );
+
+    if (iterator == events_.end())
+    {
+        return false;
+    }
+
+    events_.erase(iterator);
+
+    return true;
 }
 
 const Event* AgendaManager::findEvent(
