@@ -69,3 +69,95 @@ bool utf8PopBack(std::string& text)
 
     return true;
 }
+
+bool isValidUtf8(std::string_view text)
+{
+    std::size_t index = 0;
+
+    while (index < text.size())
+    {
+        const unsigned char first =
+            static_cast<unsigned char>(text[index]);
+
+        std::size_t length = 0;
+
+        if (first <= 0x7F)
+        {
+            length = 1;
+        }
+        else if (first >= 0xC2 && first <= 0xDF)
+        {
+            length = 2;
+        }
+        else if (first >= 0xE0 && first <= 0xEF)
+        {
+            length = 3;
+        }
+        else if (first >= 0xF0 && first <= 0xF4)
+        {
+            length = 4;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (index + length > text.size())
+        {
+            return false;
+        }
+
+        for (
+            std::size_t offset = 1;
+            offset < length;
+            ++offset
+        )
+        {
+            const unsigned char continuation =
+                static_cast<unsigned char>(
+                    text[index + offset]
+                );
+
+            if ((continuation & 0xC0) != 0x80)
+            {
+                return false;
+            }
+        }
+
+        if (length == 3)
+        {
+            const unsigned char second =
+                static_cast<unsigned char>(
+                    text[index + 1]
+                );
+
+            if (
+                (first == 0xE0 && second < 0xA0) ||
+                (first == 0xED && second > 0x9F)
+            )
+            {
+                return false;
+            }
+        }
+
+        if (length == 4)
+        {
+            const unsigned char second =
+                static_cast<unsigned char>(
+                    text[index + 1]
+                );
+
+            if (
+                (first == 0xF0 && second < 0x90) ||
+                (first == 0xF4 && second > 0x8F)
+            )
+            {
+                return false;
+            }
+        }
+
+        index += length;
+    }
+
+    return true;
+}

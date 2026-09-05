@@ -56,6 +56,57 @@ void test_empty_text_cannot_be_removed()
     assert(value.empty());
 }
 
+void test_accepts_valid_utf8_sequences()
+{
+    assert(isValidUtf8(""));
+    assert(isValidUtf8("ASCII"));
+
+    assert(
+        isValidUtf8(
+            std::string("\xCE\x91", 2)
+        )
+    );
+
+    assert(
+        isValidUtf8(
+            std::string("\xF0\x9F\x99\x82", 4)
+        )
+    );
+}
+
+void test_rejects_invalid_utf8_sequences()
+{
+    assert(
+        !isValidUtf8(
+            std::string("\x80", 1)
+        )
+    );
+
+    assert(
+        !isValidUtf8(
+            std::string("\xC0\xAF", 2)
+        )
+    );
+
+    assert(
+        !isValidUtf8(
+            std::string("\xED\xA0\x80", 3)
+        )
+    );
+
+    assert(
+        !isValidUtf8(
+            std::string("\xF4\x90\x80\x80", 4)
+        )
+    );
+
+    assert(
+        !isValidUtf8(
+            std::string("\xE2\x82", 2)
+        )
+    );
+}
+
 int main()
 {
     test_counts_ascii_characters();
@@ -64,6 +115,8 @@ int main()
     test_removes_one_complete_character();
     test_removes_four_byte_character_safely();
     test_empty_text_cannot_be_removed();
+    test_accepts_valid_utf8_sequences();
+    test_rejects_invalid_utf8_sequences();
 
     std::cout << "All UTF-8 tests passed.\n";
 
