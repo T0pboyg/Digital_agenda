@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "core/agenda_manager.h"
 
@@ -463,6 +464,140 @@ void test_deleted_id_is_not_reused()
     );
 }
 
+void test_snapshot_and_restore_preserve_state_and_next_id()
+{
+    AgendaManager agenda;
+    const DateTime now = testNow();
+
+    const auto first =
+        agenda.createEvent(validDraft("First"), now);
+
+    const auto second =
+        agenda.createEvent(validDraft("Second"), now);
+
+    assert(first.error == EventError::None);
+    assert(second.error == EventError::None);
+
+    AgendaState saved = agenda.snapshot();
+
+    saved.events[0].reminderSeen = true;
+    saved.events[0].createdAt =
+        DateTime{
+            Date{2026, 9, 3},
+            TimeOfDay{8, 15}
+        };
+
+    std::reverse(
+        saved.events.begin(),
+        saved.events.end()
+    );
+
+    assert(agenda.deleteEvent(second.eventId));
+    assert(agenda.restoreState(saved));
+
+    const AgendaState restored = agenda.snapshot();
+
+    assert(restored.events.size() == 2);
+    assert(restored.nextId == 3);
+    assert(restored.events[0].id == first.eventId);
+
+    const Event* restoredFirst =
+        agenda.findEvent(first.eventId);
+
+    assert(restoredFirst != nullptr);
+    assert(restoredFirst->reminderSeen);
+
+    assert(
+        serialMinute(restoredFirst->createdAt) ==
+        serialMinute(
+            DateTime{
+                Date{2026, 9, 3},
+                TimeOfDay{8, 15}
+            }
+        )
+    );
+
+    assert(
+        agenda.findEvent(second.eventId) !=
+        nullptr
+    );
+}
+
+void test_restore_rejects_invalid_state_without_changes()
+{
+    AgendaManager agenda;
+    const DateTime now = testNow();
+
+    assert(
+        agenda.createEvent(
+            validDraft("Original"),
+            now
+        ).error == EventError::None
+    );
+
+    const AgendaState before = agenda.snapshot();
+
+    AgendaState invalid = before;
+    invalid.nextId = 1;
+
+    assert(!agenda.restoreState(invalid));
+
+    const AgendaState after = agenda.snapshot();
+
+    assert(
+        after.events.size() ==
+        before.events.size()
+    );
+
+    assert(after.nextId == before.nextId);
+    assert(agenda.events().front().text == "Original");
+}
+
+void test_501st_event_is_rejected_without_consuming_id()
+{
+    AgendaManager agenda;
+    const DateTime now = testNow();
+
+    for (
+        std::size_t index = 0;
+        index < MAX_AGENDA_EVENTS;
+        ++index
+    )
+    {
+        const auto result =
+            agenda.createEvent(
+                validDraft(
+                    "Event " +
+                    std::to_string(index)
+                ),
+                now
+            );
+
+        assert(result.error == EventError::None);
+    }
+
+    const AgendaState before = agenda.snapshot();
+
+    const auto rejected =
+        agenda.createEvent(
+            validDraft("Overflow"),
+            now
+        );
+
+    assert(
+        rejected.error ==
+        EventError::AgendaFull
+    );
+
+    assert(rejected.eventId == 0);
+    assert(agenda.size() == MAX_AGENDA_EVENTS);
+
+    assert(
+        agenda.snapshot().nextId ==
+        before.nextId
+    );
+}
+
 int main()
 {
     test_new_manager_is_empty();
@@ -477,6 +612,9 @@ int main()
     test_delete_missing_event_returns_false();
     test_delete_existing_event_removes_only_target();
     test_deleted_id_is_not_reused();
+    test_snapshot_and_restore_preserve_state_and_next_id();
+    test_restore_rejects_invalid_state_without_changes();
+    test_501st_event_is_rejected_without_consuming_id();
 
     std::cout
         << "All agenda manager tests passed.\n";

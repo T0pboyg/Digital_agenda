@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "event.h"
+#include "agenda_state.h"
 
 struct CreateEventResult
 {
@@ -27,6 +28,11 @@ public:
     );
 
     bool deleteEvent(std::uint32_t id);
+    AgendaState snapshot() const;
+
+    bool restoreState(
+        const AgendaState& state
+    );
 
     const Event* findEvent(std::uint32_t id) const;
     const std::vector<Event>& events() const;

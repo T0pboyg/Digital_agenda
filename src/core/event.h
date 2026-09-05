@@ -14,7 +14,8 @@ enum class EventError
     EmptyText,
     TextTooLong,
     PastEvent,
-    EventNotFound
+    EventNotFound,
+    AgendaFull
 };
 
 struct EventDraft

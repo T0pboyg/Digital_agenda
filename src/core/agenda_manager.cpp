@@ -64,9 +64,18 @@ CreateEventResult AgendaManager::createEvent(
     const EventError error =
         validateDraft(draft, now);
 
+
     if (error != EventError::None)
     {
         return CreateEventResult{error, 0};
+    }
+
+    if (events_.size() >= MAX_AGENDA_EVENTS)
+    {
+        return CreateEventResult{
+            EventError::AgendaFull,
+            0
+        };
     }
 
     const std::uint32_t assignedId = nextId_;
@@ -148,6 +157,34 @@ bool AgendaManager::deleteEvent(
     }
 
     events_.erase(iterator);
+
+    return true;
+}
+
+AgendaState AgendaManager::snapshot() const
+{
+    return AgendaState{
+        events_,
+        nextId_
+    };
+}
+
+bool AgendaManager::restoreState(
+    const AgendaState& state
+)
+{
+    if (
+        validateAgendaState(state) !=
+        AgendaStateError::None
+    )
+    {
+        return false;
+    }
+
+    events_ = state.events;
+    nextId_ = state.nextId;
+
+    sortEvents();
 
     return true;
 }
