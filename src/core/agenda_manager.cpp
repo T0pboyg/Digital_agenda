@@ -2,6 +2,60 @@
 
 #include <algorithm>
 
+namespace
+{
+bool eventComesBefore(
+    const Event& left,
+    const Event& right
+)
+{
+    const auto leftDay =
+        serialDay(left.eventDate);
+
+    const auto rightDay =
+        serialDay(right.eventDate);
+
+    if (leftDay != rightDay)
+    {
+        return leftDay < rightDay;
+    }
+
+    if (
+        left.eventTime.has_value() !=
+        right.eventTime.has_value()
+    )
+    {
+        return !left.eventTime.has_value();
+    }
+
+    if (left.eventTime.has_value())
+    {
+        const auto leftMinute =
+            serialMinute(
+                DateTime{
+                    left.eventDate,
+                    left.eventTime.value()
+                }
+            );
+
+        const auto rightMinute =
+            serialMinute(
+                DateTime{
+                    right.eventDate,
+                    right.eventTime.value()
+                }
+            );
+
+        if (leftMinute != rightMinute)
+        {
+            return leftMinute < rightMinute;
+        }
+    }
+
+    return false;
+}
+}
+
 CreateEventResult AgendaManager::createEvent(
     const EventDraft& draft,
     const DateTime& now
@@ -29,6 +83,7 @@ CreateEventResult AgendaManager::createEvent(
     );
 
     ++nextId_;
+    sortEvents();
 
     return CreateEventResult{
         EventError::None,
@@ -71,4 +126,13 @@ std::size_t AgendaManager::size() const
 bool AgendaManager::empty() const
 {
     return events_.empty();
+}
+
+void AgendaManager::sortEvents()
+{
+    std::sort(
+        events_.begin(),
+        events_.end(),
+        eventComesBefore
+    );
 }

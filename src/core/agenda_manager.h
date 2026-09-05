@@ -27,6 +27,8 @@ public:
     bool empty() const;
 
 private:
+    void sortEvents();
+
     std::vector<Event> events_;
     std::uint32_t nextId_ = 1;
 };
