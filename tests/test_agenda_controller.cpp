@@ -264,6 +264,79 @@ EventDraft futureDraft(
     };
 }
 
+void assertDateEqual(
+    const Date& actual,
+    const Date& expected
+)
+{
+    assert(actual.year == expected.year);
+    assert(actual.month == expected.month);
+    assert(actual.day == expected.day);
+}
+
+void assertTimeEqual(
+    const TimeOfDay& actual,
+    const TimeOfDay& expected
+)
+{
+    assert(actual.hour == expected.hour);
+    assert(actual.minute == expected.minute);
+}
+
+void assertDateTimeEqual(
+    const DateTime& actual,
+    const DateTime& expected
+)
+{
+    assertDateEqual(actual.date, expected.date);
+    assertTimeEqual(actual.time, expected.time);
+}
+
+void assertEventEqual(
+    const Event& actual,
+    const Event& expected
+)
+{
+    assert(actual.id == expected.id);
+    assertDateEqual(actual.eventDate, expected.eventDate);
+
+    assert(
+        actual.eventTime.has_value() ==
+        expected.eventTime.has_value()
+    );
+
+    if (actual.eventTime.has_value())
+    {
+        assertTimeEqual(
+            *actual.eventTime,
+            *expected.eventTime
+        );
+    }
+
+    assert(actual.text == expected.text);
+    assert(actual.reminderSeen == expected.reminderSeen);
+    assertDateTimeEqual(actual.createdAt, expected.createdAt);
+}
+
+void assertAgendaStateEqual(
+    const AgendaState& actual,
+    const AgendaState& expected
+)
+{
+    assert(actual.nextId == expected.nextId);
+    assert(actual.events.size() == expected.events.size());
+
+    for (std::size_t index = 0;
+         index < actual.events.size();
+         ++index)
+    {
+        assertEventEqual(
+            actual.events[index],
+            expected.events[index]
+        );
+    }
+}
+
 void test_create_requires_ready_controller()
 {
     TestByteStorage storage;
@@ -430,6 +503,202 @@ void test_create_read_failure_rolls_back()
     assert(primary.writeCount == 0);
     assert(backup.writeCount == 0);
 }
+
+void test_update_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerChangeResult result =
+        controller.updateEvent(
+            1,
+            futureDraft("Updated"),
+            controllerNow()
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::NotReady
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(storage.writeCount == 0);
+}
+
+void test_successful_update_is_saved()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Original"),
+            controllerNow()
+        );
+
+    assert(created.eventId == 1);
+    storage.writeCount = 0;
+
+    const EventDraft updatedDraft{
+        Date{2026, 9, 9},
+        std::optional<TimeOfDay>{
+            TimeOfDay{14, 45}
+        },
+        "Updated"
+    };
+
+    const AgendaControllerChangeResult result =
+        controller.updateEvent(
+            created.eventId,
+            updatedDraft,
+            controllerNow()
+        );
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::None);
+    assert(storage.writeCount == 1);
+
+    const Event* updated =
+        controller.agenda().findEvent(created.eventId);
+
+    assert(updated != nullptr);
+    assert(updated->text == "Updated");
+    assert(updated->eventDate.day == 9);
+    assert(updated->eventTime.has_value());
+    assert(updated->eventTime->hour == 14);
+    assert(updated->eventTime->minute == 45);
+
+    const EventDecodeResult decoded =
+        decodeAgendaState(storage.writtenBytes);
+
+    assert(decoded.error == EventCodecError::None);
+    assert(decoded.state.events.size() == 1);
+    assert(decoded.state.events[0].text == "Updated");
+}
+
+void test_missing_update_does_not_save()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerChangeResult result =
+        controller.updateEvent(
+            77,
+            futureDraft("Updated"),
+            controllerNow()
+        );
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::EventNotFound);
+    assert(storage.writeCount == 0);
+}
+
+void test_past_update_does_not_save()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Original"),
+            controllerNow()
+        );
+
+    assert(created.eventId == 1);
+    storage.writeCount = 0;
+
+    const EventDraft pastDraft{
+        Date{2026, 9, 6},
+        std::optional<TimeOfDay>{},
+        "Past"
+    };
+
+    const AgendaControllerChangeResult result =
+        controller.updateEvent(
+            created.eventId,
+            pastDraft,
+            controllerNow()
+        );
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::PastEvent);
+    assert(storage.writeCount == 0);
+    assert(
+        controller.agenda()
+            .findEvent(created.eventId)
+            ->text == "Original"
+    );
+}
+
+void test_update_write_failure_restores_exact_state()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Original"),
+            controllerNow()
+        );
+
+    assert(created.eventId == 1);
+
+    const AgendaState before =
+        controller.agenda().snapshot();
+
+    storage.writeResult =
+        ByteStorageError::WriteFailed;
+
+    const EventDraft changedDraft{
+        Date{2026, 9, 10},
+        std::optional<TimeOfDay>{},
+        "Changed"
+    };
+
+    const AgendaControllerChangeResult result =
+        controller.updateEvent(
+            created.eventId,
+            changedDraft,
+            controllerNow()
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::WriteFailed
+    );
+
+    assert(result.eventError == EventError::None);
+
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
+}
 }
 
 int main()
@@ -445,6 +714,11 @@ int main()
     test_invalid_creation_does_not_save();
     test_create_write_failure_rolls_back_and_preserves_id();
     test_create_read_failure_rolls_back();
+    test_update_requires_ready_controller();
+    test_successful_update_is_saved();
+    test_missing_update_does_not_save();
+    test_past_update_does_not_save();
+    test_update_write_failure_restores_exact_state();
 
     std::cout
         << "All agenda controller tests passed.\n";
