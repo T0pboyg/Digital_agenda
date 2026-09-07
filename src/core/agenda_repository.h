@@ -15,6 +15,7 @@ struct AgendaLoadResult
 {
     AgendaRepositoryError error;
     AgendaState state;
+    bool recoveredFromBackup = false;
 };
 
 class AgendaRepository
@@ -22,6 +23,11 @@ class AgendaRepository
 public:
     explicit AgendaRepository(
         ByteStorage& storage
+    );
+
+    AgendaRepository(
+        ByteStorage& storage,
+        ByteStorage& backupStorage
     );
 
     AgendaLoadResult load() const;
@@ -32,4 +38,5 @@ public:
 
 private:
     ByteStorage& storage_;
+    ByteStorage* backupStorage_;
 };
