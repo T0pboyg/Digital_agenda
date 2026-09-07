@@ -189,3 +189,50 @@ AgendaController::updateEvent(
         EventError::None
     };
 }
+
+AgendaControllerChangeResult
+AgendaController::deleteEvent(
+    std::uint32_t eventId
+)
+{
+    if (!ready_)
+    {
+        return AgendaControllerChangeResult{
+            AgendaControllerError::NotReady,
+            EventError::None
+        };
+    }
+
+    const AgendaState previousState =
+        agenda_.snapshot();
+
+    if (!agenda_.deleteEvent(eventId))
+    {
+        return AgendaControllerChangeResult{
+            AgendaControllerError::None,
+            EventError::EventNotFound
+        };
+    }
+
+    const AgendaRepositoryError saveError =
+        repository_.save(agenda_.snapshot());
+
+    if (saveError != AgendaRepositoryError::None)
+    {
+        const bool restored =
+            agenda_.restoreState(previousState);
+
+        assert(restored);
+        (void)restored;
+
+        return AgendaControllerChangeResult{
+            mapRepositoryError(saveError),
+            EventError::None
+        };
+    }
+
+    return AgendaControllerChangeResult{
+        AgendaControllerError::None,
+        EventError::None
+    };
+}

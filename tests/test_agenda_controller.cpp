@@ -699,6 +699,120 @@ void test_update_write_failure_restores_exact_state()
         before
     );
 }
+
+void test_delete_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerChangeResult result =
+        controller.deleteEvent(1);
+
+    assert(
+        result.error ==
+        AgendaControllerError::NotReady
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(storage.writeCount == 0);
+}
+
+void test_successful_delete_is_saved()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Dentist"),
+            controllerNow()
+        );
+
+    assert(created.eventId == 1);
+    storage.writeCount = 0;
+
+    const AgendaControllerChangeResult result =
+        controller.deleteEvent(created.eventId);
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::None);
+    assert(controller.agenda().empty());
+    assert(storage.writeCount == 1);
+
+    const EventDecodeResult decoded =
+        decodeAgendaState(storage.writtenBytes);
+
+    assert(decoded.error == EventCodecError::None);
+    assert(decoded.state.events.empty());
+    assert(decoded.state.nextId == 2);
+}
+
+void test_missing_delete_does_not_save()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerChangeResult result =
+        controller.deleteEvent(77);
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::EventNotFound);
+    assert(storage.writeCount == 0);
+}
+
+void test_delete_write_failure_restores_exact_state()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Dentist"),
+            controllerNow()
+        );
+
+    assert(created.eventId == 1);
+
+    const AgendaState before =
+        controller.agenda().snapshot();
+
+    storage.writeResult =
+        ByteStorageError::WriteFailed;
+
+    const AgendaControllerChangeResult result =
+        controller.deleteEvent(created.eventId);
+
+    assert(
+        result.error ==
+        AgendaControllerError::WriteFailed
+    );
+
+    assert(result.eventError == EventError::None);
+
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
+}
 }
 
 int main()
@@ -719,6 +833,10 @@ int main()
     test_missing_update_does_not_save();
     test_past_update_does_not_save();
     test_update_write_failure_restores_exact_state();
+    test_delete_requires_ready_controller();
+    test_successful_delete_is_saved();
+    test_missing_delete_does_not_save();
+    test_delete_write_failure_restores_exact_state();
 
     std::cout
         << "All agenda controller tests passed.\n";
