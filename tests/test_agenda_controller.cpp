@@ -68,6 +68,52 @@ AgendaState storedControllerState()
     };
 }
 
+AgendaState rollbackControllerState()
+{
+    return AgendaState{
+        {
+            Event{
+                11,
+                Date{2026, 9, 8},
+                std::optional<TimeOfDay>{},
+                "All-day planning",
+                true,
+                DateTime{
+                    Date{2026, 9, 1},
+                    TimeOfDay{8, 15}
+                }
+            },
+            Event{
+                7,
+                Date{2026, 9, 8},
+                std::optional<TimeOfDay>{
+                    TimeOfDay{9, 0}
+                },
+                "Morning appointment",
+                false,
+                DateTime{
+                    Date{2026, 9, 2},
+                    TimeOfDay{9, 30}
+                }
+            },
+            Event{
+                19,
+                Date{2026, 9, 12},
+                std::optional<TimeOfDay>{
+                    TimeOfDay{16, 45}
+                },
+                "Late appointment",
+                true,
+                DateTime{
+                    Date{2026, 9, 3},
+                    TimeOfDay{11, 50}
+                }
+            }
+        },
+        25
+    };
+}
+
 std::vector<std::uint8_t> encodedBytes(
     const AgendaState& state
 )
@@ -243,6 +289,18 @@ static_assert(
     "AgendaController must expose read-only agenda access"
 );
 
+static_assert(
+    std::is_same_v<
+        decltype(
+            std::declval<
+                AgendaController&
+            >().agenda()
+        ),
+        const AgendaManager&
+    >,
+    "A mutable controller must still expose read-only agenda access"
+);
+
 DateTime controllerNow()
 {
     return DateTime{
@@ -360,6 +418,123 @@ void test_create_requires_ready_controller()
     assert(storage.writeCount == 0);
 }
 
+void test_mutations_remain_rejected_after_failed_startup()
+{
+    TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::ReadFailed,
+        {}
+    };
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::ReadFailed
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Rejected creation"),
+            controllerNow()
+        );
+
+    const AgendaControllerChangeResult updated =
+        controller.updateEvent(
+            1,
+            futureDraft("Rejected update"),
+            controllerNow()
+        );
+
+    const AgendaControllerChangeResult deleted =
+        controller.deleteEvent(1);
+
+    assert(!controller.isReady());
+    assert(created.error == AgendaControllerError::NotReady);
+    assert(created.eventError == EventError::None);
+    assert(created.eventId == 0);
+    assert(updated.error == AgendaControllerError::NotReady);
+    assert(updated.eventError == EventError::None);
+    assert(deleted.error == AgendaControllerError::NotReady);
+    assert(deleted.eventError == EventError::None);
+    assert(controller.agenda().empty());
+    assert(storage.writeCount == 0);
+}
+
+void test_failed_restart_revokes_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult saved =
+        controller.createEvent(
+            futureDraft("Persisted event"),
+            controllerNow()
+        );
+
+    assert(saved.eventId == 1);
+
+    const AgendaState before =
+        controller.agenda().snapshot();
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::ReadFailed,
+        {}
+    };
+
+    const AgendaStartResult restarted =
+        controller.start();
+
+    assert(
+        restarted.error ==
+        AgendaControllerError::ReadFailed
+    );
+
+    assert(!restarted.recoveredFromBackup);
+    assert(!controller.isReady());
+
+    const std::size_t writesBeforeMutations =
+        storage.writeCount;
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            futureDraft("Rejected creation"),
+            controllerNow()
+        );
+
+    const AgendaControllerChangeResult updated =
+        controller.updateEvent(
+            saved.eventId,
+            futureDraft("Rejected update"),
+            controllerNow()
+        );
+
+    const AgendaControllerChangeResult deleted =
+        controller.deleteEvent(saved.eventId);
+
+    assert(created.error == AgendaControllerError::NotReady);
+    assert(created.eventError == EventError::None);
+    assert(created.eventId == 0);
+    assert(updated.error == AgendaControllerError::NotReady);
+    assert(updated.eventError == EventError::None);
+    assert(deleted.error == AgendaControllerError::NotReady);
+    assert(deleted.eventError == EventError::None);
+    assert(storage.writeCount == writesBeforeMutations);
+
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
+}
+
 void test_successful_creation_is_saved()
 {
     TestByteStorage storage;
@@ -420,6 +595,12 @@ void test_invalid_creation_does_not_save()
 void test_create_write_failure_rolls_back_and_preserves_id()
 {
     TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(rollbackControllerState())
+    };
+
     AgendaRepository repository(storage);
     AgendaController controller(repository);
 
@@ -427,6 +608,9 @@ void test_create_write_failure_rolls_back_and_preserves_id()
         controller.start().error ==
         AgendaControllerError::None
     );
+
+    const AgendaState before =
+        controller.agenda().snapshot();
 
     storage.writeResult =
         ByteStorageError::WriteFailed;
@@ -444,8 +628,10 @@ void test_create_write_failure_rolls_back_and_preserves_id()
 
     assert(failed.eventError == EventError::None);
     assert(failed.eventId == 0);
-    assert(controller.agenda().empty());
-    assert(controller.agenda().snapshot().nextId == 1);
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
 
     storage.writeResult =
         ByteStorageError::None;
@@ -458,15 +644,26 @@ void test_create_write_failure_rolls_back_and_preserves_id()
 
     assert(saved.error == AgendaControllerError::None);
     assert(saved.eventError == EventError::None);
-    assert(saved.eventId == 1);
-    assert(controller.agenda().size() == 1);
-    assert(controller.agenda().snapshot().nextId == 2);
+    assert(saved.eventId == before.nextId);
+    assert(
+        controller.agenda().size() ==
+        before.events.size() + 1
+    );
+    assert(
+        controller.agenda().snapshot().nextId ==
+        before.nextId + 1
+    );
 }
 
 void test_create_read_failure_rolls_back()
 {
     TestByteStorage primary;
     TestByteStorage backup;
+
+    primary.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(rollbackControllerState())
+    };
 
     AgendaRepository repository(
         primary,
@@ -479,6 +676,9 @@ void test_create_read_failure_rolls_back()
         controller.start().error ==
         AgendaControllerError::None
     );
+
+    const AgendaState before =
+        controller.agenda().snapshot();
 
     primary.readResult = ByteReadResult{
         ByteStorageError::ReadFailed,
@@ -498,8 +698,10 @@ void test_create_read_failure_rolls_back()
 
     assert(result.eventError == EventError::None);
     assert(result.eventId == 0);
-    assert(controller.agenda().empty());
-    assert(controller.agenda().snapshot().nextId == 1);
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
     assert(primary.writeCount == 0);
     assert(backup.writeCount == 0);
 }
@@ -652,6 +854,12 @@ void test_past_update_does_not_save()
 void test_update_write_failure_restores_exact_state()
 {
     TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(rollbackControllerState())
+    };
+
     AgendaRepository repository(storage);
     AgendaController controller(repository);
 
@@ -660,29 +868,29 @@ void test_update_write_failure_restores_exact_state()
         AgendaControllerError::None
     );
 
-    const AgendaControllerCreateResult created =
-        controller.createEvent(
-            futureDraft("Original"),
-            controllerNow()
-        );
-
-    assert(created.eventId == 1);
-
     const AgendaState before =
         controller.agenda().snapshot();
+
+    assert(before.events.size() == 3);
+    assert(before.events[0].id == 11);
+    assert(before.events[1].id == 7);
+    assert(before.events[2].id == 19);
+    assert(before.events[2].reminderSeen);
 
     storage.writeResult =
         ByteStorageError::WriteFailed;
 
     const EventDraft changedDraft{
-        Date{2026, 9, 10},
-        std::optional<TimeOfDay>{},
+        Date{2026, 9, 7},
+        std::optional<TimeOfDay>{
+            TimeOfDay{11, 0}
+        },
         "Changed"
     };
 
     const AgendaControllerChangeResult result =
         controller.updateEvent(
-            created.eventId,
+            19,
             changedDraft,
             controllerNow()
         );
@@ -776,6 +984,12 @@ void test_missing_delete_does_not_save()
 void test_delete_write_failure_restores_exact_state()
 {
     TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(rollbackControllerState())
+    };
+
     AgendaRepository repository(storage);
     AgendaController controller(repository);
 
@@ -784,14 +998,6 @@ void test_delete_write_failure_restores_exact_state()
         AgendaControllerError::None
     );
 
-    const AgendaControllerCreateResult created =
-        controller.createEvent(
-            futureDraft("Dentist"),
-            controllerNow()
-        );
-
-    assert(created.eventId == 1);
-
     const AgendaState before =
         controller.agenda().snapshot();
 
@@ -799,7 +1005,7 @@ void test_delete_write_failure_restores_exact_state()
         ByteStorageError::WriteFailed;
 
     const AgendaControllerChangeResult result =
-        controller.deleteEvent(created.eventId);
+        controller.deleteEvent(7);
 
     assert(
         result.error ==
@@ -824,6 +1030,8 @@ int main()
     test_read_failure_prevents_startup();
     test_invalid_data_prevents_startup();
     test_create_requires_ready_controller();
+    test_mutations_remain_rejected_after_failed_startup();
+    test_failed_restart_revokes_ready_controller();
     test_successful_creation_is_saved();
     test_invalid_creation_does_not_save();
     test_create_write_failure_rolls_back_and_preserves_id();
