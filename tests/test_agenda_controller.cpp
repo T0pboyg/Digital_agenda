@@ -242,6 +242,194 @@ static_assert(
     >,
     "AgendaController must expose read-only agenda access"
 );
+
+DateTime controllerNow()
+{
+    return DateTime{
+        Date{2026, 9, 7},
+        TimeOfDay{10, 0}
+    };
+}
+
+EventDraft futureDraft(
+    const std::string& text
+)
+{
+    return EventDraft{
+        Date{2026, 9, 8},
+        std::optional<TimeOfDay>{
+            TimeOfDay{12, 30}
+        },
+        text
+    };
+}
+
+void test_create_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerCreateResult result =
+        controller.createEvent(
+            futureDraft("Dentist"),
+            controllerNow()
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::NotReady
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(result.eventId == 0);
+    assert(controller.agenda().empty());
+    assert(storage.writeCount == 0);
+}
+
+void test_successful_creation_is_saved()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult result =
+        controller.createEvent(
+            futureDraft("Dentist"),
+            controllerNow()
+        );
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::None);
+    assert(result.eventId == 1);
+    assert(controller.agenda().size() == 1);
+    assert(storage.writeCount == 1);
+
+    const EventDecodeResult decoded =
+        decodeAgendaState(storage.writtenBytes);
+
+    assert(decoded.error == EventCodecError::None);
+    assert(decoded.state.events.size() == 1);
+    assert(decoded.state.events[0].id == 1);
+    assert(decoded.state.events[0].text == "Dentist");
+    assert(decoded.state.nextId == 2);
+}
+
+void test_invalid_creation_does_not_save()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult result =
+        controller.createEvent(
+            futureDraft(""),
+            controllerNow()
+        );
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.eventError == EventError::EmptyText);
+    assert(result.eventId == 0);
+    assert(controller.agenda().empty());
+    assert(storage.writeCount == 0);
+}
+
+void test_create_write_failure_rolls_back_and_preserves_id()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    storage.writeResult =
+        ByteStorageError::WriteFailed;
+
+    const AgendaControllerCreateResult failed =
+        controller.createEvent(
+            futureDraft("First attempt"),
+            controllerNow()
+        );
+
+    assert(
+        failed.error ==
+        AgendaControllerError::WriteFailed
+    );
+
+    assert(failed.eventError == EventError::None);
+    assert(failed.eventId == 0);
+    assert(controller.agenda().empty());
+    assert(controller.agenda().snapshot().nextId == 1);
+
+    storage.writeResult =
+        ByteStorageError::None;
+
+    const AgendaControllerCreateResult saved =
+        controller.createEvent(
+            futureDraft("Second attempt"),
+            controllerNow()
+        );
+
+    assert(saved.error == AgendaControllerError::None);
+    assert(saved.eventError == EventError::None);
+    assert(saved.eventId == 1);
+    assert(controller.agenda().size() == 1);
+    assert(controller.agenda().snapshot().nextId == 2);
+}
+
+void test_create_read_failure_rolls_back()
+{
+    TestByteStorage primary;
+    TestByteStorage backup;
+
+    AgendaRepository repository(
+        primary,
+        backup
+    );
+
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    primary.readResult = ByteReadResult{
+        ByteStorageError::ReadFailed,
+        {}
+    };
+
+    const AgendaControllerCreateResult result =
+        controller.createEvent(
+            futureDraft("Dentist"),
+            controllerNow()
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::ReadFailed
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(result.eventId == 0);
+    assert(controller.agenda().empty());
+    assert(controller.agenda().snapshot().nextId == 1);
+    assert(primary.writeCount == 0);
+    assert(backup.writeCount == 0);
+}
 }
 
 int main()
@@ -252,6 +440,11 @@ int main()
     test_backup_recovery_is_reported();
     test_read_failure_prevents_startup();
     test_invalid_data_prevents_startup();
+    test_create_requires_ready_controller();
+    test_successful_creation_is_saved();
+    test_invalid_creation_does_not_save();
+    test_create_write_failure_rolls_back_and_preserves_id();
+    test_create_read_failure_rolls_back();
 
     std::cout
         << "All agenda controller tests passed.\n";

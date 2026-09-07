@@ -1,5 +1,7 @@
 #include "agenda_controller.h"
 
+#include <cassert>
+
 namespace
 {
 AgendaControllerError mapRepositoryError(
@@ -75,4 +77,59 @@ bool AgendaController::isReady() const
 const AgendaManager& AgendaController::agenda() const
 {
     return agenda_;
+}
+
+AgendaControllerCreateResult
+AgendaController::createEvent(
+    const EventDraft& draft,
+    const DateTime& now
+)
+{
+    if (!ready_)
+    {
+        return AgendaControllerCreateResult{
+            AgendaControllerError::NotReady,
+            EventError::None,
+            0
+        };
+    }
+
+    const AgendaState previousState =
+        agenda_.snapshot();
+
+    const CreateEventResult created =
+        agenda_.createEvent(draft, now);
+
+    if (created.error != EventError::None)
+    {
+        return AgendaControllerCreateResult{
+            AgendaControllerError::None,
+            created.error,
+            0
+        };
+    }
+
+    const AgendaRepositoryError saveError =
+        repository_.save(agenda_.snapshot());
+
+    if (saveError != AgendaRepositoryError::None)
+    {
+        const bool restored =
+            agenda_.restoreState(previousState);
+
+        assert(restored);
+        (void)restored;
+
+        return AgendaControllerCreateResult{
+            mapRepositoryError(saveError),
+            EventError::None,
+            0
+        };
+    }
+
+    return AgendaControllerCreateResult{
+        AgendaControllerError::None,
+        EventError::None,
+        created.eventId
+    };
 }
