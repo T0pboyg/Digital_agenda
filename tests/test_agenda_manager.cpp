@@ -278,6 +278,50 @@ void test_update_preserves_identity_and_reorders_event()
     );
 }
 
+void test_successful_update_reactivates_seen_reminder()
+{
+    AgendaManager agenda;
+
+    const AgendaState initial{
+        {
+            Event{
+                7,
+                Date{2026, 9, 5},
+                TimeOfDay{12, 30},
+                "Original",
+                true,
+                DateTime{
+                    Date{2026, 9, 1},
+                    TimeOfDay{9, 45}
+                }
+            }
+        },
+        8
+    };
+
+    assert(agenda.restoreState(initial));
+
+    const EventError error =
+        agenda.updateEvent(
+            7,
+            EventDraft{
+                Date{2026, 9, 6},
+                TimeOfDay{13, 0},
+                "Updated"
+            },
+            testNow()
+        );
+
+    assert(error == EventError::None);
+
+    const Event* updated =
+        agenda.findEvent(7);
+
+    assert(updated != nullptr);
+    assert(!updated->reminderSeen);
+    assert(updated->text == "Updated");
+}
+
 void test_failed_update_is_atomic()
 {
     AgendaManager agenda;
@@ -727,6 +771,7 @@ int main()
     test_501st_event_is_rejected_without_consuming_id();
     test_mark_reminder_seen_changes_only_target();
     test_mark_missing_reminder_does_not_change_state();
+    test_update_preserves_identity_and_reorders_event();
 
     std::cout
         << "All agenda manager tests passed.\n";
