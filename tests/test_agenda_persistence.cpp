@@ -7,6 +7,7 @@
 #include "core/agenda_manager.h"
 #include "core/agenda_repository.h"
 #include "platform/desktop_file_storage.h"
+#include "core/agenda_controller.h"
 
 namespace
 {
@@ -249,10 +250,138 @@ void test_corrupted_primary_recovers_from_backup()
     resetTestFiles();
 }
 
+void test_acknowledged_reminder_stays_hidden_after_reopen()
+{
+    resetTestFiles();
+
+    const std::filesystem::path primaryPath =
+        TEST_ROOT / "agenda.bin";
+
+    const std::filesystem::path backupPath =
+        TEST_ROOT / "agenda.bak";
+
+    DesktopFileStorage primary(primaryPath);
+    DesktopFileStorage backup(backupPath);
+
+    AgendaRepository repository(
+        primary,
+        backup
+    );
+
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerCreateResult created =
+        controller.createEvent(
+            persistenceDraft("Reminder"),
+            persistenceNow()
+        );
+
+    assert(
+        created.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        created.eventError ==
+        EventError::None
+    );
+
+    const DateTime reminderNow{
+        Date{2026, 9, 7},
+        TimeOfDay{17, 0}
+    };
+
+    const AgendaControllerReminderResult due =
+        controller.nextReminder(reminderNow);
+
+    assert(
+        due.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        due.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(due.event.has_value());
+    assert(due.event->id == created.eventId);
+
+    const AgendaControllerChangeResult acknowledged =
+        controller.acknowledgeReminder(
+            created.eventId
+        );
+
+    assert(
+        acknowledged.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        acknowledged.eventError ==
+        EventError::None
+    );
+
+    DesktopFileStorage reopenedPrimary(
+        primaryPath
+    );
+
+    DesktopFileStorage reopenedBackup(
+        backupPath
+    );
+
+    AgendaRepository reopenedRepository(
+        reopenedPrimary,
+        reopenedBackup
+    );
+
+    AgendaController reopenedController(
+        reopenedRepository
+    );
+
+    assert(
+        reopenedController.start().error ==
+        AgendaControllerError::None
+    );
+
+    const Event* reopenedEvent =
+        reopenedController
+            .agenda()
+            .findEvent(created.eventId);
+
+    assert(reopenedEvent != nullptr);
+    assert(reopenedEvent->reminderSeen);
+
+    const AgendaControllerReminderResult afterReopen =
+        reopenedController.nextReminder(
+            reminderNow
+        );
+
+    assert(
+        afterReopen.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        afterReopen.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(!afterReopen.event.has_value());
+
+    resetTestFiles();
+}
+
 int main()
 {
     test_event_survives_save_and_new_repository();
     test_corrupted_primary_recovers_from_backup();
+    test_acknowledged_reminder_stays_hidden_after_reopen();
 
     std::cout
         << "All agenda persistence tests passed.\n";

@@ -1396,6 +1396,99 @@ void test_acknowledgement_read_failure_restores_state()
     );
 }
 
+void test_due_reminders_advance_one_at_a_time()
+{
+    TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(
+            AgendaState{
+                {
+                    Event{
+                        1,
+                        Date{2026, 9, 8},
+                        TimeOfDay{9, 0},
+                        "Timed",
+                        false,
+                        DateTime{
+                            Date{2026, 9, 1},
+                            TimeOfDay{10, 0}
+                        }
+                    },
+                    Event{
+                        2,
+                        Date{2026, 9, 8},
+                        std::nullopt,
+                        "All day",
+                        false,
+                        DateTime{
+                            Date{2026, 9, 1},
+                            TimeOfDay{11, 0}
+                        }
+                    }
+                },
+                3
+            }
+        )
+    };
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const DateTime now{
+        Date{2026, 9, 7},
+        TimeOfDay{18, 0}
+    };
+
+    const AgendaControllerReminderResult first =
+        controller.nextReminder(now);
+
+    assert(first.event.has_value());
+    assert(first.event->id == 2);
+
+    assert(
+        controller
+            .acknowledgeReminder(2)
+            .error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerReminderResult second =
+        controller.nextReminder(now);
+
+    assert(second.event.has_value());
+    assert(second.event->id == 1);
+
+    assert(
+        controller
+            .acknowledgeReminder(1)
+            .error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerReminderResult finished =
+        controller.nextReminder(now);
+
+    assert(
+        finished.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        finished.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(!finished.event.has_value());
+    assert(storage.writeCount == 2);
+}
+
 int main()
 {
     test_new_controller_is_not_ready();
@@ -1429,6 +1522,7 @@ int main()
     test_successful_acknowledgement_is_saved();
     test_acknowledgement_write_failure_restores_exact_state();
     test_acknowledgement_read_failure_restores_state();
+    test_due_reminders_advance_one_at_a_time();
 
     std::cout
         << "All agenda controller tests passed.\n";
