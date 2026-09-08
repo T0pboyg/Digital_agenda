@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <vector>
+
 #include "agenda_ui_state_machine.h"
 
 namespace
@@ -18,6 +21,59 @@ bool sameDate(
         left.year == right.year &&
         left.month == right.month &&
         left.day == right.day;
+}
+
+std::vector<const Event*> eventsForDate(
+    const AgendaManager& agenda,
+    const Date& date
+)
+{
+    std::vector<const Event*> result;
+
+    for (const Event& event : agenda.events())
+    {
+        if (sameDate(event.eventDate, date))
+        {
+            result.push_back(&event);
+        }
+    }
+
+    return result;
+}
+
+std::string firstUiCodePoints(
+    const std::string& text
+)
+{
+    constexpr std::size_t limit = 32;
+
+    std::size_t position = 0;
+    std::size_t count = 0;
+
+    while (
+        position < text.size() &&
+        count < limit
+    )
+    {
+        ++position;
+
+        while (
+            position < text.size() &&
+            (
+                static_cast<unsigned char>(
+                    text[position]
+                ) &
+                0xC0
+            ) == 0x80
+        )
+        {
+            ++position;
+        }
+
+        ++count;
+    }
+
+    return text.substr(0, position);
 }
 
 void moveToNextDate(Date& value)
@@ -196,6 +252,30 @@ void AgendaUiStateMachine::handle(
         return;
     }
 
+    if (
+        action.type ==
+        AgendaUiActionType::Back
+    )
+    {
+        if (
+            screen_ ==
+            AgendaUiScreen::EventDetails
+        )
+        {
+            screen_ = AgendaUiScreen::Day;
+            return;
+        }
+
+        if (
+            screen_ ==
+            AgendaUiScreen::Day
+        )
+        {
+            screen_ = AgendaUiScreen::Month;
+            return;
+        }
+    }
+
     if (screen_ == AgendaUiScreen::Month)
     {
         if (
@@ -255,6 +335,80 @@ void AgendaUiStateMachine::handle(
 
             return;
         }
+
+        return;
+    }
+
+    if (
+        screen_ == AgendaUiScreen::Day &&
+        action.type ==
+            AgendaUiActionType::PreviousDayPage
+    )
+    {
+        clampDayPage();
+
+        if (dayPageIndex_ > 0)
+        {
+            --dayPageIndex_;
+        }
+
+        return;
+    }
+
+    if (
+        screen_ == AgendaUiScreen::Day &&
+        action.type ==
+            AgendaUiActionType::NextDayPage
+    )
+    {
+        clampDayPage();
+
+        AgendaUiView current;
+        rebuildDayRows(current);
+
+        if (
+            dayPageIndex_ + 1 <
+            current.dayPageCount
+        )
+        {
+            ++dayPageIndex_;
+        }
+
+        return;
+    }
+
+    if (
+        screen_ == AgendaUiScreen::Day &&
+        action.type ==
+            AgendaUiActionType::SelectEvent
+    )
+    {
+        if (!action.eventId.has_value())
+        {
+            return;
+        }
+
+        const Event* selected =
+            controller_.agenda().findEvent(
+                action.eventId.value()
+            );
+
+        if (
+            selected == nullptr ||
+            !selectedDate_.has_value() ||
+            !sameDate(
+                selected->eventDate,
+                selectedDate_.value()
+            )
+        )
+        {
+            return;
+        }
+
+        selectedEventId_ = selected->id;
+
+        screen_ =
+            AgendaUiScreen::EventDetails;
 
         return;
     }
@@ -416,6 +570,21 @@ AgendaUiView AgendaUiStateMachine::view() const
     if (controller_.isReady())
     {
         rebuildMonthCells(result);
+        rebuildDayRows(result);
+
+        if (selectedEventId_.has_value())
+        {
+            const Event* selected =
+                controller_.agenda().findEvent(
+                    selectedEventId_.value()
+                );
+
+            if (selected != nullptr)
+            {
+                result.selectedEvent =
+                    *selected;
+            }
+        }
     }
 
     return result;
@@ -479,6 +648,101 @@ void AgendaUiStateMachine::rebuildMonthCells(
                 break;
             }
         }
+    }
+}
+
+void AgendaUiStateMachine::rebuildDayRows(
+    AgendaUiView& result
+) const
+{
+    result.dayEvents.clear();
+
+    if (!selectedDate_.has_value())
+    {
+        result.dayPageCount = 1;
+        return;
+    }
+
+    const std::vector<const Event*> events =
+        eventsForDate(
+            controller_.agenda(),
+            selectedDate_.value()
+        );
+
+    result.dayPageCount =
+        events.empty()
+            ? 1
+            : (
+                events.size() +
+                AGENDA_UI_EVENTS_PER_PAGE -
+                1
+            ) /
+                AGENDA_UI_EVENTS_PER_PAGE;
+
+    result.dayPreviousEnabled =
+        dayPageIndex_ > 0;
+
+    result.dayNextEnabled =
+        dayPageIndex_ + 1 <
+        result.dayPageCount;
+
+    const std::size_t first =
+        dayPageIndex_ *
+        AGENDA_UI_EVENTS_PER_PAGE;
+
+    const std::size_t last =
+        std::min(
+            first +
+                AGENDA_UI_EVENTS_PER_PAGE,
+            events.size()
+        );
+
+    for (
+        std::size_t index = first;
+        index < last;
+        ++index
+    )
+    {
+        result.dayEvents.push_back(
+            AgendaUiEventRow{
+                events[index]->id,
+                events[index]->eventTime,
+                firstUiCodePoints(
+                    events[index]->text
+                )
+            }
+        );
+    }
+}
+
+void AgendaUiStateMachine::clampDayPage()
+{
+    if (!selectedDate_.has_value())
+    {
+        dayPageIndex_ = 0;
+        return;
+    }
+
+    const std::size_t eventCount =
+        eventsForDate(
+            controller_.agenda(),
+            selectedDate_.value()
+        ).size();
+
+    const std::size_t pageCount =
+        eventCount == 0
+            ? 1
+            : (
+                eventCount +
+                AGENDA_UI_EVENTS_PER_PAGE -
+                1
+            ) /
+                AGENDA_UI_EVENTS_PER_PAGE;
+
+    if (dayPageIndex_ >= pageCount)
+    {
+        dayPageIndex_ =
+            pageCount - 1;
     }
 }
 

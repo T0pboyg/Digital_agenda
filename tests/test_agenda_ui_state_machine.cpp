@@ -9,6 +9,8 @@
 #include "core/agenda_controller.h"
 #include "core/agenda_ui_state_machine.h"
 #include "core/clock.h"
+#include "core/event_codec.h"
+#include "core/utf8.h"
 
 class UiTestStorage : public ByteStorage
 {
@@ -99,6 +101,57 @@ DateTime uiTestNow()
         Date{2026, 9, 8},
         TimeOfDay{10, 0}
     };
+}
+
+Event uiStoredEvent(
+    std::uint32_t id,
+    const Date& date,
+    const std::string& text
+)
+{
+    return Event{
+        id,
+        date,
+        std::nullopt,
+        text,
+        false,
+        DateTime{
+            Date{2026, 9, 1},
+            TimeOfDay{9, 0}
+        }
+    };
+}
+
+void storeUiState(
+    UiTestStorage& storage,
+    const AgendaState& state
+)
+{
+    const EventEncodeResult encoded =
+        encodeAgendaState(state);
+
+    assert(
+        encoded.error ==
+        EventCodecError::None
+    );
+
+    storage.bytes = encoded.bytes;
+
+    storage.readError =
+        ByteStorageError::None;
+}
+
+void openUiDay(
+    AgendaUiStateMachine& ui,
+    const Date& date
+)
+{
+    AgendaUiAction action{
+        AgendaUiActionType::SelectDate
+    };
+
+    action.date = date;
+    ui.handle(action);
 }
 
 void test_valid_startup_opens_current_month()
@@ -1020,6 +1073,687 @@ void test_irrelevant_month_action_has_no_side_effect()
     assert(storage.writeCount == 0);
 }
 
+void test_day_view_filters_events_and_builds_first_page()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    std::vector<Event> events;
+
+    for (
+        std::uint32_t id = 1;
+        id <= 7;
+        ++id
+    )
+    {
+        events.push_back(
+            uiStoredEvent(
+                id,
+                Date{2026, 9, 9},
+                "Event " + std::to_string(id)
+            )
+        );
+    }
+
+    events.push_back(
+        uiStoredEvent(
+            8,
+            Date{2026, 9, 10},
+            "Other date"
+        )
+    );
+
+    storeUiState(
+        storage,
+        AgendaState{events, 9}
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(view.dayPageIndex == 0);
+    assert(view.dayPageCount == 3);
+    assert(view.dayEvents.size() == 3);
+
+    assert(view.dayEvents[0].eventId == 1);
+    assert(view.dayEvents[1].eventId == 2);
+    assert(view.dayEvents[2].eventId == 3);
+
+    assert(!view.dayPreviousEnabled);
+    assert(view.dayNextEnabled);
+}
+
+void test_day_page_navigation_respects_boundaries()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    std::vector<Event> events;
+
+    for (
+        std::uint32_t id = 1;
+        id <= 7;
+        ++id
+    )
+    {
+        events.push_back(
+            uiStoredEvent(
+                id,
+                Date{2026, 9, 9},
+                "Event " + std::to_string(id)
+            )
+        );
+    }
+
+    storeUiState(
+        storage,
+        AgendaState{events, 8}
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle({
+        AgendaUiActionType::PreviousDayPage
+    });
+
+    assert(ui.view().dayPageIndex == 0);
+
+    ui.handle({
+        AgendaUiActionType::NextDayPage
+    });
+
+    const AgendaUiView middle = ui.view();
+
+    assert(middle.dayPageIndex == 1);
+    assert(middle.dayPageCount == 3);
+    assert(middle.dayEvents.size() == 3);
+
+    assert(middle.dayEvents[0].eventId == 4);
+    assert(middle.dayEvents[1].eventId == 5);
+    assert(middle.dayEvents[2].eventId == 6);
+
+    assert(middle.dayPreviousEnabled);
+    assert(middle.dayNextEnabled);
+
+    ui.handle({
+        AgendaUiActionType::NextDayPage
+    });
+
+    const AgendaUiView last = ui.view();
+
+    assert(last.dayPageIndex == 2);
+    assert(last.dayPageCount == 3);
+    assert(last.dayEvents.size() == 1);
+    assert(last.dayEvents[0].eventId == 7);
+
+    assert(last.dayPreviousEnabled);
+    assert(!last.dayNextEnabled);
+
+    ui.handle({
+        AgendaUiActionType::NextDayPage
+    });
+
+    assert(ui.view().dayPageIndex == 2);
+
+    ui.handle({
+        AgendaUiActionType::PreviousDayPage
+    });
+
+    ui.handle({
+        AgendaUiActionType::PreviousDayPage
+    });
+
+    ui.handle({
+        AgendaUiActionType::PreviousDayPage
+    });
+
+    assert(ui.view().dayPageIndex == 0);
+}
+
+void test_back_from_day_returns_to_same_month()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Day
+    );
+
+    ui.handle({
+        AgendaUiActionType::Back
+    });
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(view.displayedMonth.year == 2026);
+    assert(view.displayedMonth.month == 9);
+
+    assert(view.selectedDate.has_value());
+    assert(view.selectedDate->year == 2026);
+    assert(view.selectedDate->month == 9);
+    assert(view.selectedDate->day == 9);
+
+    assert(storage.writeCount == 0);
+}
+
+void test_day_row_text_is_utf8_shortened_copy()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    std::string longText;
+
+    for (int index = 0; index < 40; ++index)
+    {
+        longText += u8"α";
+    }
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    longText
+                )
+            },
+            2
+        }
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(view.dayEvents.size() == 1);
+
+    assert(
+        utf8CodePointCount(
+            view.dayEvents[0].text
+        ) == 32
+    );
+
+    assert(
+        utf8CodePointCount(longText) == 40
+    );
+
+    const Event* stored =
+        controller.agenda().findEvent(1);
+
+    assert(stored != nullptr);
+    assert(stored->text == longText);
+}
+
+void test_selecting_day_event_opens_owned_details()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    "One"
+                ),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 9},
+                    "Two"
+                ),
+                uiStoredEvent(
+                    3,
+                    Date{2026, 9, 9},
+                    "Three"
+                ),
+                uiStoredEvent(
+                    4,
+                    Date{2026, 9, 9},
+                    "Original"
+                )
+            },
+            5
+        }
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle({
+        AgendaUiActionType::NextDayPage
+    });
+
+    assert(ui.view().dayPageIndex == 1);
+
+    AgendaUiAction selectEventAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    selectEventAction.eventId = 4;
+
+    ui.handle(selectEventAction);
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    assert(view.selectedEvent.has_value());
+    assert(view.selectedEvent->id == 4);
+
+    assert(
+        view.selectedEvent->text ==
+        "Original"
+    );
+
+    assert(
+        view.selectedEvent->eventDate.year ==
+        2026
+    );
+
+    assert(
+        view.selectedEvent->eventDate.month ==
+        9
+    );
+
+    assert(
+        view.selectedEvent->eventDate.day ==
+        9
+    );
+
+    assert(view.dayPageIndex == 1);
+}
+
+void test_back_from_details_returns_to_same_day_page()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    "One"
+                ),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 9},
+                    "Two"
+                ),
+                uiStoredEvent(
+                    3,
+                    Date{2026, 9, 9},
+                    "Three"
+                ),
+                uiStoredEvent(
+                    4,
+                    Date{2026, 9, 9},
+                    "Four"
+                )
+            },
+            5
+        }
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle({
+        AgendaUiActionType::NextDayPage
+    });
+
+    AgendaUiAction selectEventAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    selectEventAction.eventId = 4;
+
+    ui.handle(selectEventAction);
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    ui.handle({
+        AgendaUiActionType::Back
+    });
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(view.dayPageIndex == 1);
+    assert(view.dayEvents.size() == 1);
+    assert(view.dayEvents[0].eventId == 4);
+    assert(storage.writeCount == 0);
+}
+
+void test_empty_day_has_one_stable_page()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 11}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(view.dayPageIndex == 0);
+    assert(view.dayPageCount == 1);
+    assert(view.dayEvents.empty());
+    assert(!view.dayPreviousEnabled);
+    assert(!view.dayNextEnabled);
+}
+
+void test_invalid_event_selection_is_ignored()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    "Selected date"
+                ),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 10},
+                    "Different date"
+                )
+            },
+            3
+        }
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    AgendaUiAction differentDateAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    differentDateAction.eventId = 2;
+    ui.handle(differentDateAction);
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        !ui.view().selectedEvent.has_value()
+    );
+
+    AgendaUiAction missingEventAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    missingEventAction.eventId = 999;
+    ui.handle(missingEventAction);
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        !ui.view().selectedEvent.has_value()
+    );
+
+    AgendaUiAction missingPayloadAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    ui.handle(missingPayloadAction);
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        !ui.view().selectedEvent.has_value()
+    );
+
+    assert(storage.writeCount == 0);
+}
+
+void test_details_views_are_independent_event_copies()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    "Original"
+                )
+            },
+            2
+        }
+    );
+
+    AgendaRepository repository(storage);
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    AgendaUiAction selectEventAction{
+        AgendaUiActionType::SelectEvent
+    };
+
+    selectEventAction.eventId = 1;
+    ui.handle(selectEventAction);
+
+    const AgendaUiView before =
+        ui.view();
+
+    assert(before.selectedEvent.has_value());
+
+    assert(
+        before.selectedEvent->text ==
+        "Original"
+    );
+
+    const AgendaControllerChangeResult updated =
+        controller.updateEvent(
+            1,
+            EventDraft{
+                Date{2026, 9, 9},
+                std::nullopt,
+                "Changed"
+            },
+            uiTestNow()
+        );
+
+    assert(
+        updated.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        updated.eventError ==
+        EventError::None
+    );
+
+    const AgendaUiView after =
+        ui.view();
+
+    assert(after.selectedEvent.has_value());
+
+    assert(
+        after.selectedEvent->text ==
+        "Changed"
+    );
+
+    assert(
+        before.selectedEvent->text ==
+        "Original"
+    );
+}
+
 int main()
 {
     test_valid_startup_opens_current_month();
@@ -1043,6 +1777,15 @@ int main()
     test_clock_write_failure_keeps_manual_setup_open();
     test_invalid_manual_clock_draft_is_not_written();
     test_irrelevant_month_action_has_no_side_effect();
+    test_day_view_filters_events_and_builds_first_page();
+    test_day_page_navigation_respects_boundaries();
+    test_back_from_day_returns_to_same_month();
+    test_day_row_text_is_utf8_shortened_copy();
+    test_selecting_day_event_opens_owned_details();
+    test_back_from_details_returns_to_same_day_page();
+    test_empty_day_has_one_stable_page();
+    test_invalid_event_selection_is_ignored();
+    test_details_views_are_independent_event_copies();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";
