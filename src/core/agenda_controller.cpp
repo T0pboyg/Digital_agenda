@@ -79,6 +79,63 @@ const AgendaManager& AgendaController::agenda() const
     return agenda_;
 }
 
+AgendaControllerReminderResult
+AgendaController::nextReminder(
+    const DateTime& now
+) const
+{
+    if (!ready_)
+    {
+        return AgendaControllerReminderResult{
+            AgendaControllerError::NotReady,
+            ReminderEngineError::None,
+            std::nullopt
+        };
+    }
+
+    const ReminderCheckResult checked =
+        findNextDueReminder(agenda_, now);
+
+    if (
+        checked.error !=
+        ReminderEngineError::None
+    )
+    {
+        return AgendaControllerReminderResult{
+            AgendaControllerError::None,
+            checked.error,
+            std::nullopt
+        };
+    }
+
+    if (!checked.eventId.has_value())
+    {
+        return AgendaControllerReminderResult{
+            AgendaControllerError::None,
+            ReminderEngineError::None,
+            std::nullopt
+        };
+    }
+
+    const Event* event =
+        agenda_.findEvent(*checked.eventId);
+
+    if (event == nullptr)
+    {
+        return AgendaControllerReminderResult{
+            AgendaControllerError::InvalidData,
+            ReminderEngineError::None,
+            std::nullopt
+        };
+    }
+
+    return AgendaControllerReminderResult{
+        AgendaControllerError::None,
+        ReminderEngineError::None,
+        *event
+    };
+}
+
 AgendaControllerCreateResult
 AgendaController::createEvent(
     const EventDraft& draft,

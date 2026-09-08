@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include "agenda_manager.h"
 #include "agenda_repository.h"
+#include "reminder_engine.h"
 
 enum class AgendaControllerError
 {
@@ -33,6 +35,13 @@ struct AgendaControllerChangeResult
     EventError eventError;
 };
 
+struct AgendaControllerReminderResult
+{
+    AgendaControllerError error;
+    ReminderEngineError reminderError;
+    std::optional<Event> event;
+};
+
 class AgendaController
 {
 public:
@@ -45,6 +54,10 @@ public:
     bool isReady() const;
 
     const AgendaManager& agenda() const;
+
+    AgendaControllerReminderResult nextReminder(
+        const DateTime& now
+    ) const;
 
     AgendaControllerCreateResult createEvent(
         const EventDraft& draft,

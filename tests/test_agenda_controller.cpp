@@ -1021,6 +1021,169 @@ void test_delete_write_failure_restores_exact_state()
 }
 }
 
+void test_reminder_lookup_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerReminderResult result =
+        controller.nextReminder(
+            DateTime{
+                Date{2026, 9, 7},
+                TimeOfDay{17, 0}
+            }
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::NotReady
+    );
+
+    assert(
+        result.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(!result.event.has_value());
+    assert(storage.writeCount == 0);
+}
+
+void test_invalid_clock_is_reported_by_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerReminderResult result =
+        controller.nextReminder(
+            DateTime{
+                Date{2026, 9, 7},
+                TimeOfDay{24, 0}
+            }
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        result.reminderError ==
+        ReminderEngineError::InvalidDateTime
+    );
+
+    assert(!result.event.has_value());
+    assert(storage.writeCount == 0);
+}
+
+void test_due_reminder_returns_safe_copy_without_save()
+{
+    TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(
+            AgendaState{
+                {
+                    Event{
+                        7,
+                        Date{2026, 9, 8},
+                        TimeOfDay{12, 30},
+                        "Dentist",
+                        false,
+                        DateTime{
+                            Date{2026, 9, 1},
+                            TimeOfDay{10, 0}
+                        }
+                    }
+                },
+                8
+            }
+        )
+    };
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const std::size_t writesBefore =
+        storage.writeCount;
+
+    AgendaControllerReminderResult result =
+        controller.nextReminder(
+            DateTime{
+                Date{2026, 9, 7},
+                TimeOfDay{17, 0}
+            }
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        result.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(result.event.has_value());
+    assert(result.event->id == 7);
+    assert(result.event->text == "Dentist");
+    assert(storage.writeCount == writesBefore);
+
+    result.event->text = "Changed copy";
+
+    assert(
+        controller.agenda()
+            .findEvent(7)
+            ->text == "Dentist"
+    );
+}
+
+void test_controller_reports_no_due_reminder()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerReminderResult result =
+        controller.nextReminder(
+            DateTime{
+                Date{2026, 9, 7},
+                TimeOfDay{17, 0}
+            }
+        );
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        result.reminderError ==
+        ReminderEngineError::None
+    );
+
+    assert(!result.event.has_value());
+    assert(storage.writeCount == 0);
+}
+
 int main()
 {
     test_new_controller_is_not_ready();
@@ -1045,6 +1208,10 @@ int main()
     test_successful_delete_is_saved();
     test_missing_delete_does_not_save();
     test_delete_write_failure_restores_exact_state();
+    test_reminder_lookup_requires_ready_controller();
+    test_invalid_clock_is_reported_by_controller();
+    test_due_reminder_returns_safe_copy_without_save();
+    test_controller_reports_no_due_reminder();
 
     std::cout
         << "All agenda controller tests passed.\n";
