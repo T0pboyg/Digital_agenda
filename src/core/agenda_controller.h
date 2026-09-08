@@ -74,6 +74,10 @@ public:
         std::uint32_t eventId
     );
 
+    AgendaControllerChangeResult acknowledgeReminder(
+        std::uint32_t eventId
+    );
+
 private:
     AgendaManager agenda_;
     AgendaRepository& repository_;

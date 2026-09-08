@@ -1184,6 +1184,218 @@ void test_controller_reports_no_due_reminder()
     assert(storage.writeCount == 0);
 }
 
+void test_acknowledgement_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerChangeResult result =
+        controller.acknowledgeReminder(1);
+
+    assert(
+        result.error ==
+        AgendaControllerError::NotReady
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(storage.writeCount == 0);
+}
+
+void test_missing_acknowledgement_does_not_save()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerChangeResult result =
+        controller.acknowledgeReminder(999);
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        result.eventError ==
+        EventError::EventNotFound
+    );
+
+    assert(storage.writeCount == 0);
+}
+
+void test_successful_acknowledgement_is_saved()
+{
+    TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(
+            AgendaState{
+                {
+                    Event{
+                        7,
+                        Date{2026, 9, 8},
+                        std::nullopt,
+                        "All day",
+                        false,
+                        DateTime{
+                            Date{2026, 9, 1},
+                            TimeOfDay{10, 0}
+                        }
+                    }
+                },
+                8
+            }
+        )
+    };
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaControllerChangeResult result =
+        controller.acknowledgeReminder(7);
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(storage.writeCount == 1);
+
+    assert(
+        controller.agenda()
+            .findEvent(7)
+            ->reminderSeen
+    );
+
+    const EventDecodeResult decoded =
+        decodeAgendaState(storage.writtenBytes);
+
+    assert(
+        decoded.error ==
+        EventCodecError::None
+    );
+
+    assert(decoded.state.events.size() == 1);
+    assert(decoded.state.events[0].reminderSeen);
+}
+
+void test_acknowledgement_write_failure_restores_exact_state()
+{
+    TestByteStorage storage;
+
+    storage.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(rollbackControllerState())
+    };
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaState before =
+        controller.agenda().snapshot();
+
+    storage.writeResult =
+        ByteStorageError::WriteFailed;
+
+    const AgendaControllerChangeResult result =
+        controller.acknowledgeReminder(7);
+
+    assert(
+        result.error ==
+        AgendaControllerError::WriteFailed
+    );
+
+    assert(result.eventError == EventError::None);
+
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
+}
+
+void test_acknowledgement_read_failure_restores_state()
+{
+    TestByteStorage primary;
+    TestByteStorage backup;
+
+    primary.readResult = ByteReadResult{
+        ByteStorageError::None,
+        encodedBytes(
+            AgendaState{
+                {
+                    Event{
+                        7,
+                        Date{2026, 9, 8},
+                        std::nullopt,
+                        "All day",
+                        false,
+                        DateTime{
+                            Date{2026, 9, 1},
+                            TimeOfDay{10, 0}
+                        }
+                    }
+                },
+                8
+            }
+        )
+    };
+
+    AgendaRepository repository(
+        primary,
+        backup
+    );
+
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None
+    );
+
+    const AgendaState before =
+        controller.agenda().snapshot();
+
+    primary.readResult = ByteReadResult{
+        ByteStorageError::ReadFailed,
+        {}
+    };
+
+    const AgendaControllerChangeResult result =
+        controller.acknowledgeReminder(7);
+
+    assert(
+        result.error ==
+        AgendaControllerError::ReadFailed
+    );
+
+    assert(result.eventError == EventError::None);
+    assert(primary.writeCount == 0);
+    assert(backup.writeCount == 0);
+
+    assertAgendaStateEqual(
+        controller.agenda().snapshot(),
+        before
+    );
+}
+
 int main()
 {
     test_new_controller_is_not_ready();
@@ -1212,6 +1424,11 @@ int main()
     test_invalid_clock_is_reported_by_controller();
     test_due_reminder_returns_safe_copy_without_save();
     test_controller_reports_no_due_reminder();
+    test_acknowledgement_requires_ready_controller();
+    test_missing_acknowledgement_does_not_save();
+    test_successful_acknowledgement_is_saved();
+    test_acknowledgement_write_failure_restores_exact_state();
+    test_acknowledgement_read_failure_restores_state();
 
     std::cout
         << "All agenda controller tests passed.\n";
