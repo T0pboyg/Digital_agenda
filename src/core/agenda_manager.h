@@ -28,6 +28,7 @@ public:
     );
 
     bool deleteEvent(std::uint32_t id);
+    bool markReminderSeen(std::uint32_t id);
     AgendaState snapshot() const;
 
     bool restoreState(

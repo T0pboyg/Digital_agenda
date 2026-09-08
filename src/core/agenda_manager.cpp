@@ -161,6 +161,28 @@ bool AgendaManager::deleteEvent(
     return true;
 }
 
+bool AgendaManager::markReminderSeen(
+    std::uint32_t id
+)
+{
+    const auto iterator = std::find_if(
+        events_.begin(),
+        events_.end(),
+        [id](const Event& event)
+        {
+            return event.id == id;
+        }
+    );
+
+    if (iterator == events_.end())
+    {
+        return false;
+    }
+
+    iterator->reminderSeen = true;
+    return true;
+}
+
 AgendaState AgendaManager::snapshot() const
 {
     return AgendaState{

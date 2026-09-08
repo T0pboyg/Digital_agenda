@@ -598,6 +598,116 @@ void test_501st_event_is_rejected_without_consuming_id()
     );
 }
 
+void test_mark_reminder_seen_changes_only_target()
+{
+    AgendaManager agenda;
+
+    const AgendaState initial{
+        {
+            Event{
+                3,
+                Date{2026, 9, 8},
+                std::nullopt,
+                "All day",
+                false,
+                DateTime{
+                    Date{2026, 9, 1},
+                    TimeOfDay{8, 15}
+                }
+            },
+            Event{
+                7,
+                Date{2026, 9, 8},
+                TimeOfDay{12, 30},
+                "Timed",
+                false,
+                DateTime{
+                    Date{2026, 9, 2},
+                    TimeOfDay{9, 45}
+                }
+            }
+        },
+        11
+    };
+
+    assert(agenda.restoreState(initial));
+    assert(agenda.markReminderSeen(7));
+
+    const AgendaState after =
+        agenda.snapshot();
+
+    assert(after.nextId == 11);
+    assert(after.events.size() == 2);
+
+    const Event* untouched =
+        agenda.findEvent(3);
+
+    const Event* changed =
+        agenda.findEvent(7);
+
+    assert(untouched != nullptr);
+    assert(changed != nullptr);
+
+    assert(!untouched->reminderSeen);
+    assert(changed->reminderSeen);
+
+    assert(changed->text == "Timed");
+    assert(changed->eventDate.year == 2026);
+    assert(changed->eventDate.month == 9);
+    assert(changed->eventDate.day == 8);
+
+    assert(changed->eventTime.has_value());
+    assert(changed->eventTime->hour == 12);
+    assert(changed->eventTime->minute == 30);
+
+    assert(changed->createdAt.date.day == 2);
+    assert(changed->createdAt.time.hour == 9);
+    assert(changed->createdAt.time.minute == 45);
+}
+
+void test_mark_missing_reminder_does_not_change_state()
+{
+    AgendaManager agenda;
+
+    const CreateEventResult created =
+        agenda.createEvent(
+            validDraft("Existing"),
+            testNow()
+        );
+
+    assert(created.error == EventError::None);
+
+    const AgendaState before =
+        agenda.snapshot();
+
+    assert(!agenda.markReminderSeen(999));
+
+    const AgendaState after =
+        agenda.snapshot();
+
+    assert(after.nextId == before.nextId);
+
+    assert(
+        after.events.size() ==
+        before.events.size()
+    );
+
+    assert(
+        after.events[0].id ==
+        before.events[0].id
+    );
+
+    assert(
+        after.events[0].text ==
+        before.events[0].text
+    );
+
+    assert(
+        after.events[0].reminderSeen ==
+        before.events[0].reminderSeen
+    );
+}
+
 int main()
 {
     test_new_manager_is_empty();
@@ -615,6 +725,8 @@ int main()
     test_snapshot_and_restore_preserve_state_and_next_id();
     test_restore_rejects_invalid_state_without_changes();
     test_501st_event_is_rejected_without_consuming_id();
+    test_mark_reminder_seen_changes_only_target();
+    test_mark_missing_reminder_does_not_change_state();
 
     std::cout
         << "All agenda manager tests passed.\n";
