@@ -2598,6 +2598,565 @@ void test_t9_limit_and_screen_guard_preserve_text()
     assert(!ui.view().editor.dirty);
 }
 
+void enterEnglishA(
+    AgendaUiStateMachine& ui
+)
+{
+    ui.handle(
+        {AgendaUiActionType::ToggleT9Language}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            100
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorReview
+    );
+}
+
+void test_successful_create_and_update_are_saved()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    enterEnglishA(ui);
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(controller.agenda().size() == 1);
+    assert(storage.writeCount == 1);
+
+    const std::uint32_t id =
+        controller.agenda().events().front().id;
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            id
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartEdit}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNextDay}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(view.displayedMonth.year == 2026);
+    assert(view.displayedMonth.month == 9);
+
+    const Event* updated =
+        controller.agenda().findEvent(id);
+
+    assert(updated != nullptr);
+    assert(updated->eventDate.year == 2026);
+    assert(updated->eventDate.month == 9);
+    assert(updated->eventDate.day == 10);
+    assert(updated->text == "a");
+    assert(storage.writeCount == 2);
+}
+
+void test_empty_text_keeps_complete_create_draft()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    const AgendaUiEditorDraft before =
+        ui.view().editor;
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    const AgendaUiView after = ui.view();
+
+    assert(
+        after.screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(
+        after.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        after.eventError ==
+        EventError::EmptyText
+    );
+
+    assert(
+        after.editor.date.year ==
+        before.date.year
+    );
+
+    assert(
+        after.editor.date.month ==
+        before.date.month
+    );
+
+    assert(
+        after.editor.date.day ==
+        before.date.day
+    );
+
+    assert(
+        after.editor.time.has_value() ==
+        before.time.has_value()
+    );
+
+    assert(after.editor.text == before.text);
+    assert(controller.agenda().empty());
+    assert(storage.writeCount == 0);
+}
+
+void test_agenda_full_keeps_create_editor_open()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    std::vector<Event> events;
+
+    for (
+        std::uint32_t id = 1;
+        id <= 500;
+        ++id
+    )
+    {
+        events.push_back(
+            uiStoredEvent(
+                id,
+                Date{2026, 9, 10},
+                "Stored " +
+                    std::to_string(id)
+            )
+        );
+    }
+
+    storeUiState(
+        storage,
+        AgendaState{events, 501}
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 11}
+    );
+
+    enterEnglishA(ui);
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(
+        view.eventError ==
+        EventError::AgendaFull
+    );
+
+    assert(view.editor.text == "a");
+    assert(controller.agenda().size() == 500);
+    assert(storage.writeCount == 0);
+}
+
+void test_past_event_error_keeps_update_draft()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    7,
+                    Date{2026, 9, 8},
+                    "Move me"
+                )
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 8}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartEdit}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorPreviousDay}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(
+        view.eventError ==
+        EventError::PastEvent
+    );
+
+    assert(view.editor.date.day == 7);
+
+    const Event* stored =
+        controller.agenda().findEvent(7);
+
+    assert(stored != nullptr);
+    assert(stored->eventDate.day == 8);
+    assert(stored->text == "Move me");
+}
+
+void test_storage_and_clock_failures_preserve_draft_and_retry()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    enterEnglishA(ui);
+
+    const AgendaUiEditorDraft before =
+        ui.view().editor;
+
+    clock.readResult.error =
+        ClockError::ReadFailed;
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::ClockError
+    );
+
+    assert(
+        view.clockError ==
+        ClockError::ReadFailed
+    );
+
+    assert(view.editor.text == before.text);
+    assert(controller.agenda().empty());
+
+    ui.handle(
+        {AgendaUiActionType::CancelOperation}
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    clock.readResult = ClockReadResult{
+        ClockError::None,
+        uiTestNow()
+    };
+
+    storage.writeError =
+        ByteStorageError::WriteFailed;
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::OperationError
+    );
+
+    assert(
+        view.controllerError ==
+        AgendaControllerError::WriteFailed
+    );
+
+    assert(view.editor.text == before.text);
+    assert(controller.agenda().empty());
+
+    ui.handle(
+        {AgendaUiActionType::CancelOperation}
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::OperationError
+    );
+
+    storage.writeError =
+        ByteStorageError::None;
+
+    ui.handle(
+        {AgendaUiActionType::RetryOperation}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(controller.agenda().size() == 1);
+
+    assert(
+        controller.agenda().
+            events().front().text ==
+        "a"
+    );
+}
+
+void test_primary_read_failure_preserves_create_draft()
+{
+    UiTestStorage primary;
+    UiTestStorage backup;
+    UiTestClock clock;
+
+    AgendaRepository repository(
+        primary,
+        backup
+    );
+
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    enterEnglishA(ui);
+
+    primary.readError =
+        ByteStorageError::ReadFailed;
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::OperationError
+    );
+
+    assert(
+        view.controllerError ==
+        AgendaControllerError::ReadFailed
+    );
+
+    assert(view.editor.text == "a");
+    assert(controller.agenda().empty());
+    assert(primary.writeCount == 0);
+    assert(backup.writeCount == 0);
+}
+
 int main()
 {
     test_valid_startup_opens_current_month();
@@ -2639,6 +3198,12 @@ int main()
     test_discarded_edit_returns_to_unchanged_details();
     test_t9_editor_handles_modes_cycles_and_backspace();
     test_t9_limit_and_screen_guard_preserve_text();
+    test_successful_create_and_update_are_saved();
+    test_empty_text_keeps_complete_create_draft();
+    test_agenda_full_keeps_create_editor_open();
+    test_past_event_error_keeps_update_draft();
+    test_storage_and_clock_failures_preserve_draft_and_retry();
+    test_primary_read_failure_preserves_create_draft();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";
