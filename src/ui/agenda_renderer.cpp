@@ -79,10 +79,69 @@ std::string controllerErrorText(
         return "ΜΗ ΕΤΟΙΜΟ";
 
     case AgendaControllerError::None:
-        return "";
+        return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
     }
 
-    return "";
+    return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+}
+
+std::string eventErrorText(
+    EventError error
+)
+{
+    switch (error)
+    {
+    case EventError::InvalidDate:
+        return "ΜΗ ΕΓΚΥΡΗ ΗΜΕΡΟΜΗΝΙΑ";
+
+    case EventError::InvalidTime:
+        return "ΜΗ ΕΓΚΥΡΗ ΩΡΑ";
+
+    case EventError::EmptyText:
+        return "ΚΕΝΟ ΚΕΙΜΕΝΟ";
+
+    case EventError::TextTooLong:
+        return "ΠΟΛΥ ΜΕΓΑΛΟ ΚΕΙΜΕΝΟ";
+
+    case EventError::PastEvent:
+        return "ΠΑΡΕΛΘΟΝ ΓΕΓΟΝΟΣ";
+
+    case EventError::EventNotFound:
+        return "ΤΟ ΓΕΓΟΝΟΣ ΔΕΝ ΒΡΕΘΗΚΕ";
+
+    case EventError::AgendaFull:
+        return "ΤΟ ΗΜΕΡΟΛΟΓΙΟ ΕΙΝΑΙ ΠΛΗΡΕΣ";
+
+    case EventError::None:
+        return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+    }
+
+    return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+}
+
+std::string clockErrorText(
+    ClockError error
+)
+{
+    switch (error)
+    {
+    case ClockError::Unavailable:
+        return "ΤΟ ΡΟΛΟΙ ΔΕΝ ΕΙΝΑΙ ΔΙΑΘΕΣΙΜΟ";
+
+    case ClockError::ReadFailed:
+        return "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ ΡΟΛΟΓΙΟΥ";
+
+    case ClockError::WriteFailed:
+        return "ΑΠΟΤΥΧΙΑ ΡΥΘΜΙΣΗΣ ΡΟΛΟΓΙΟΥ";
+
+    case ClockError::InvalidDateTime:
+        return "ΜΗ ΕΓΚΥΡΗ ΩΡΑ";
+
+    case ClockError::None:
+        return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+    }
+
+    return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
 }
 
 std::string greekMonthName(int month)
@@ -431,6 +490,14 @@ void renderDay(
 {
     if (!view.selectedDate.has_value())
     {
+        surface.drawText(
+            AgendaUiLayout::Content,
+            "ΗΜΕΡΟΜΗΝΙΑ ΜΗ ΔΙΑΘΕΣΙΜΗ",
+            UiTextStyle::Body,
+            AgendaUiColors::Error,
+            UiTextAlignment::Center
+        );
+
         return;
     }
 
@@ -1076,14 +1143,265 @@ void renderEditorText(
     );
 }
 
+void drawOverlayCard(
+    DrawSurface& surface,
+    std::string_view title
+)
+{
+    surface.fillRectangle(
+        AgendaUiLayout::FullDisplay,
+        AgendaUiColors::Overlay
+    );
+
+    surface.fillRoundedRectangle(
+        AgendaUiLayout::OverlayCard,
+        12,
+        AgendaUiColors::Surface
+    );
+
+    surface.drawRoundedRectangle(
+        AgendaUiLayout::OverlayCard,
+        12,
+        AgendaUiColors::Accent,
+        1
+    );
+
+    surface.drawText(
+        UiRect{40, 58, 160, 28},
+        title,
+        UiTextStyle::Heading,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+}
+
+void renderOverlay(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    if (
+        view.overlay ==
+        AgendaUiOverlay::None
+    )
+    {
+        return;
+    }
+
+    if (
+        view.overlay ==
+        AgendaUiOverlay::Reminder
+    )
+    {
+        drawOverlayCard(
+            surface,
+            "ΥΠΕΝΘΥΜΙΣΗ"
+        );
+
+        if (!view.reminder.has_value())
+        {
+            surface.drawText(
+                UiRect{40, 92, 160, 48},
+                "ΥΠΕΝΘΥΜΙΣΗ ΜΗ ΔΙΑΘΕΣΙΜΗ",
+                UiTextStyle::Body,
+                AgendaUiColors::Error,
+                UiTextAlignment::Center
+            );
+        }
+        else
+        {
+            const Event& reminder =
+                *view.reminder;
+
+            surface.drawText(
+                UiRect{40, 88, 160, 42},
+                utf8Prefix(
+                    reminder.text,
+                    48
+                ),
+                UiTextStyle::Body,
+                AgendaUiColors::PrimaryText,
+                UiTextAlignment::Center
+            );
+
+            const std::string reminderTime =
+                reminder.eventTime.has_value()
+                ? formatTime(
+                    *reminder.eventTime
+                )
+                : "ΟΛΗ ΜΕΡΑ";
+
+            surface.drawText(
+                UiRect{40, 128, 160, 20},
+                reminderTime,
+                UiTextStyle::Caption,
+                AgendaUiColors::Accent,
+                UiTextAlignment::Center
+            );
+        }
+
+        drawButton(
+            surface,
+            UiRect{82, 154, 76, 28},
+            "ΕΝΤΑΞΕΙ",
+            AgendaUiColors::Accent,
+            AgendaUiColors::Background
+        );
+
+        return;
+    }
+
+    if (
+        view.overlay ==
+        AgendaUiOverlay::ConfirmDelete
+    )
+    {
+        drawOverlayCard(
+            surface,
+            "ΔΙΑΓΡΑΦΗ;"
+        );
+
+        drawButton(
+            surface,
+            UiRect{48, 144, 60, 30},
+            "ΝΑΙ",
+            AgendaUiColors::Error,
+            AgendaUiColors::PrimaryText
+        );
+
+        drawButton(
+            surface,
+            UiRect{132, 144, 60, 30},
+            "ΟΧΙ",
+            AgendaUiColors::Surface,
+            AgendaUiColors::PrimaryText
+        );
+
+        return;
+    }
+
+    if (
+        view.overlay ==
+        AgendaUiOverlay::ConfirmDiscard
+    )
+    {
+        drawOverlayCard(
+            surface,
+            "ΑΠΟΡΡΙΨΗ ΑΛΛΑΓΩΝ;"
+        );
+
+        drawButton(
+            surface,
+            UiRect{48, 144, 60, 30},
+            "ΝΑΙ",
+            AgendaUiColors::Error,
+            AgendaUiColors::PrimaryText
+        );
+
+        drawButton(
+            surface,
+            UiRect{132, 144, 60, 30},
+            "ΟΧΙ",
+            AgendaUiColors::Surface,
+            AgendaUiColors::PrimaryText
+        );
+
+        return;
+    }
+
+    if (
+        view.overlay ==
+        AgendaUiOverlay::OperationError
+    )
+    {
+        drawOverlayCard(
+            surface,
+            "ΣΦΑΛΜΑ"
+        );
+
+        const std::string message =
+            view.controllerError !=
+                AgendaControllerError::None
+            ? controllerErrorText(
+                view.controllerError
+            )
+            : eventErrorText(
+                view.eventError
+            );
+
+        surface.drawText(
+            UiRect{40, 90, 160, 46},
+            message,
+            UiTextStyle::Body,
+            AgendaUiColors::Error,
+            UiTextAlignment::Center
+        );
+
+        drawButton(
+            surface,
+            UiRect{44, 148, 70, 30},
+            "ΞΑΝΑ",
+            AgendaUiColors::Accent,
+            AgendaUiColors::Background
+        );
+
+        drawButton(
+            surface,
+            UiRect{126, 148, 70, 30},
+            "ΑΚΥΡΩΣΗ",
+            AgendaUiColors::Surface,
+            AgendaUiColors::PrimaryText
+        );
+
+        return;
+    }
+
+    if (
+        view.overlay ==
+        AgendaUiOverlay::ClockError
+    )
+    {
+        drawOverlayCard(
+            surface,
+            "ΣΦΑΛΜΑ ΩΡΑΣ"
+        );
+
+        surface.drawText(
+            UiRect{40, 92, 160, 46},
+            clockErrorText(
+                view.clockError
+            ),
+            UiTextStyle::Body,
+            AgendaUiColors::Error,
+            UiTextAlignment::Center
+        );
+
+        drawButton(
+            surface,
+            UiRect{82, 150, 76, 30},
+            "ΕΝΤΑΞΕΙ",
+            AgendaUiColors::Accent,
+            AgendaUiColors::Background
+        );
+    }
+}
+
 void renderSafeFallback(
     DrawSurface& surface
 )
 {
     surface.drawText(
         AgendaUiLayout::Header,
-        "ΗΜΕΡΟΛΟΓΙΟ",
+        "ΣΦΑΛΜΑ ΠΡΟΒΟΛΗΣ",
         UiTextStyle::Title,
+        AgendaUiColors::Error,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::Content,
+        "Η ΟΘΟΝΗ ΔΕΝ ΕΙΝΑΙ ΔΙΑΘΕΣΙΜΗ",
+        UiTextStyle::Body,
         AgendaUiColors::PrimaryText,
         UiTextAlignment::Center
     );
@@ -1170,4 +1488,9 @@ void AgendaRenderer::render(
         );
         break;
     }
+
+    renderOverlay(
+        view,
+        surface
+    );
 }

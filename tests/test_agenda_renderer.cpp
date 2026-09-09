@@ -295,6 +295,19 @@ const DrawCommand* findTextCommand(
     return &*found;
 }
 
+std::size_t commandIndex(
+    const RecordingDrawSurface& surface,
+    const DrawCommand* command
+)
+{
+    assert(command != nullptr);
+
+    return static_cast<std::size_t>(
+        command -
+        surface.commands.data()
+    );
+}
+
 bool containsTextWithColor(
     const RecordingDrawSurface& surface,
     std::string_view expected,
@@ -1380,6 +1393,398 @@ void test_t9_editor_preview_is_utf8_safe()
     );
 }
 
+void test_reminder_overlay_is_drawn_after_base_screen()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.overlay =
+        AgendaUiOverlay::Reminder;
+
+    view.reminder = Event{
+        7,
+        Date{2026, 9, 10},
+        TimeOfDay{8, 5},
+        "Ιατρικό ραντεβού",
+        false,
+        DateTime{
+            Date{2026, 9, 9},
+            TimeOfDay{10, 0}
+        }
+    };
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    const auto scrim =
+        std::find_if(
+            surface.commands.begin(),
+            surface.commands.end(),
+            [](const DrawCommand& command)
+            {
+                return
+                    command.type ==
+                        DrawCommandType::
+                            FillRectangle &&
+                    command.bounds ==
+                        AgendaUiLayout::
+                            FullDisplay &&
+                    command.color ==
+                        AgendaUiColors::Overlay;
+            }
+        );
+
+    assert(
+        scrim !=
+        surface.commands.end()
+    );
+
+    const std::size_t scrimIndex =
+        static_cast<std::size_t>(
+            scrim -
+            surface.commands.begin()
+        );
+
+    const DrawCommand* title =
+        findTextCommand(
+            surface,
+            "ΥΠΕΝΘΥΜΙΣΗ"
+        );
+
+    const DrawCommand* text =
+        findTextCommand(
+            surface,
+            "Ιατρικό ραντεβού"
+        );
+
+    const DrawCommand* confirm =
+        findTextCommand(
+            surface,
+            "ΕΝΤΑΞΕΙ"
+        );
+
+    assert(
+        commandIndex(
+            surface,
+            title
+        ) > scrimIndex
+    );
+
+    assert(
+        commandIndex(
+            surface,
+            text
+        ) > scrimIndex
+    );
+
+    assert(
+        commandIndex(
+            surface,
+            confirm
+        ) > scrimIndex
+    );
+}
+
+void test_confirmation_overlays_render_both_choices()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.overlay =
+        AgendaUiOverlay::ConfirmDelete;
+
+    RecordingDrawSurface deleteSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        deleteSurface
+    );
+
+    assert(
+        containsText(
+            deleteSurface,
+            "ΔΙΑΓΡΑΦΗ;"
+        )
+    );
+
+    assert(
+        containsText(
+            deleteSurface,
+            "ΝΑΙ"
+        )
+    );
+
+    assert(
+        containsText(
+            deleteSurface,
+            "ΟΧΙ"
+        )
+    );
+
+    view.overlay =
+        AgendaUiOverlay::ConfirmDiscard;
+
+    RecordingDrawSurface discardSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        discardSurface
+    );
+
+    assert(
+        containsText(
+            discardSurface,
+            "ΑΠΟΡΡΙΨΗ ΑΛΛΑΓΩΝ;"
+        )
+    );
+
+    assert(
+        containsText(
+            discardSurface,
+            "ΝΑΙ"
+        )
+    );
+
+    assert(
+        containsText(
+            discardSurface,
+            "ΟΧΙ"
+        )
+    );
+}
+
+void test_operation_and_clock_errors_render_safe_messages()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.overlay =
+        AgendaUiOverlay::OperationError;
+
+    view.controllerError =
+        AgendaControllerError::WriteFailed;
+
+    RecordingDrawSurface operationSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        operationSurface
+    );
+
+    assert(
+        containsText(
+            operationSurface,
+            "ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            operationSurface,
+            "ΞΑΝΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            operationSurface,
+            "ΑΚΥΡΩΣΗ"
+        )
+    );
+
+    view.controllerError =
+        AgendaControllerError::None;
+
+    view.eventError =
+        EventError::EmptyText;
+
+    RecordingDrawSurface validationSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        validationSurface
+    );
+
+    assert(
+        containsText(
+            validationSurface,
+            "ΚΕΝΟ ΚΕΙΜΕΝΟ"
+        )
+    );
+
+    view.overlay =
+        AgendaUiOverlay::ClockError;
+
+    view.eventError =
+        EventError::None;
+
+    view.clockError =
+        ClockError::InvalidDateTime;
+
+    RecordingDrawSurface clockSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        clockSurface
+    );
+
+    assert(
+        containsText(
+            clockSurface,
+            "ΜΗ ΕΓΚΥΡΗ ΩΡΑ"
+        )
+    );
+}
+
+void test_unknown_screen_renders_safe_error()
+{
+    AgendaUiView view;
+
+    view.screen =
+        static_cast<AgendaUiScreen>(
+            999
+        );
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΣΦΑΛΜΑ ΠΡΟΒΟΛΗΣ"
+        )
+    );
+
+    assert(
+        allCommandsInBounds(
+            surface
+        )
+    );
+}
+
+void test_missing_required_values_render_safe_errors()
+{
+    AgendaUiView dayView;
+
+    dayView.screen =
+        AgendaUiScreen::Day;
+
+    RecordingDrawSurface daySurface;
+
+    AgendaRenderer{}.render(
+        dayView,
+        daySurface
+    );
+
+    assert(
+        containsText(
+            daySurface,
+            "ΗΜΕΡΟΜΗΝΙΑ ΜΗ ΔΙΑΘΕΣΙΜΗ"
+        )
+    );
+
+    AgendaUiView reminderView =
+        septemberMonthView();
+
+    reminderView.overlay =
+        AgendaUiOverlay::Reminder;
+
+    reminderView.reminder.reset();
+
+    RecordingDrawSurface reminderSurface;
+
+    AgendaRenderer{}.render(
+        reminderView,
+        reminderSurface
+    );
+
+    assert(
+        containsText(
+            reminderSurface,
+            "ΥΠΕΝΘΥΜΙΣΗ ΜΗ ΔΙΑΘΕΣΙΜΗ"
+        )
+    );
+}
+
+void test_every_supported_screen_stays_in_bounds()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.clockDraft = DateTime{
+        Date{2026, 9, 9},
+        TimeOfDay{10, 0}
+    };
+
+    view.selectedDate =
+        Date{2026, 9, 9};
+
+    view.selectedEvent = Event{
+        7,
+        Date{2026, 9, 10},
+        std::nullopt,
+        "Γεγονός",
+        false,
+        DateTime{
+            Date{2026, 9, 9},
+            TimeOfDay{10, 0}
+        }
+    };
+
+    view.editor.date =
+        Date{2026, 9, 10};
+
+    view.editor.time =
+        TimeOfDay{8, 5};
+
+    view.editor.text =
+        "Γεγονός";
+
+    const std::array<
+        AgendaUiScreen,
+        9
+    > screens{
+        AgendaUiScreen::ClockSetup,
+        AgendaUiScreen::Month,
+        AgendaUiScreen::Day,
+        AgendaUiScreen::EventDetails,
+        AgendaUiScreen::EditorDate,
+        AgendaUiScreen::EditorTime,
+        AgendaUiScreen::EditorText,
+        AgendaUiScreen::EditorReview,
+        AgendaUiScreen::StartupError
+    };
+
+    for (
+        AgendaUiScreen screen :
+        screens
+    )
+    {
+        view.screen = screen;
+
+        RecordingDrawSurface surface;
+
+        AgendaRenderer{}.render(
+            view,
+            surface
+        );
+
+        assert(
+            allCommandsInBounds(
+                surface
+            )
+        );
+    }
+}
+
 
 int main()
 {
@@ -1400,6 +1805,12 @@ int main()
     test_t9_editor_renders_greek_letters_and_twelve_keys();
     test_t9_editor_renders_english_numbers_and_case_state();
     test_t9_editor_preview_is_utf8_safe();
+    test_reminder_overlay_is_drawn_after_base_screen();
+    test_confirmation_overlays_render_both_choices();
+    test_operation_and_clock_errors_render_safe_messages();
+    test_unknown_screen_renders_safe_error();
+    test_missing_required_values_render_safe_errors();
+    test_every_supported_screen_stays_in_bounds();
 
     std::cout
         << "All agenda renderer tests passed.\n";
