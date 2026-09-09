@@ -6,9 +6,11 @@
 #include <string_view>
 #include <vector>
 #include <cstddef>
+#include <optional>
 
 #include "core/calendar_engine.h"
 #include "ui/agenda_renderer.h"
+#include "core/utf8.h"
 
 enum class DrawCommandType
 {
@@ -735,6 +737,229 @@ void test_month_renders_disabled_navigation_and_adjacent_dates()
     );
 }
 
+void test_day_renders_three_rows_and_page_state()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::Day;
+
+    view.selectedDate =
+        Date{2026, 9, 9};
+
+    view.dayPageIndex = 1;
+    view.dayPageCount = 3;
+
+    view.dayPreviousEnabled = true;
+    view.dayNextEnabled = true;
+
+    view.dayEvents = {
+        AgendaUiEventRow{
+            1,
+            TimeOfDay{9, 5},
+            "Οδοντίατρος"
+        },
+        AgendaUiEventRow{
+            2,
+            TimeOfDay{12, 30},
+            "Συνάντηση"
+        },
+        AgendaUiEventRow{
+            3,
+            TimeOfDay{18, 0},
+            "Προπόνηση"
+        }
+    };
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "09/09/2026"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "2/3"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "09:05"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "Οδοντίατρος"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "Συνάντηση"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "Προπόνηση"
+        )
+    );
+}
+
+void test_day_uses_all_day_label_and_utf8_safe_preview()
+{
+    const std::string longText =
+        "Αυτό είναι ένα πολύ μεγάλο ελληνικό γεγονός "
+        "που πρέπει να κοπεί με ασφάλεια";
+
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::Day;
+
+    view.selectedDate =
+        Date{2026, 9, 9};
+
+    view.dayEvents = {
+        AgendaUiEventRow{
+            7,
+            std::nullopt,
+            longText
+        }
+    };
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    const std::string expected =
+        utf8Prefix(
+            longText,
+            32
+        );
+
+    assert(
+        containsText(
+            surface,
+            "ΟΛΗ ΜΕΡΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            expected
+        )
+    );
+
+    assert(
+        isValidUtf8(expected)
+    );
+}
+
+void test_event_details_render_event_or_safe_error()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::EventDetails;
+
+    view.selectedEvent = Event{
+        7,
+        Date{2026, 9, 10},
+        TimeOfDay{8, 5},
+        "Ιατρικό ραντεβού",
+        false,
+        DateTime{
+            Date{2026, 9, 9},
+            TimeOfDay{10, 0}
+        }
+    };
+
+    RecordingDrawSurface eventSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        eventSurface
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "10/09/2026"
+        )
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "08:05"
+        )
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "Ιατρικό ραντεβού"
+        )
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "ΠΙΣΩ"
+        )
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "ΑΛΛΑΓΗ"
+        )
+    );
+
+    assert(
+        containsText(
+            eventSurface,
+            "ΔΙΑΓΡΑΦΗ"
+        )
+    );
+
+    view.selectedEvent.reset();
+
+    RecordingDrawSurface missingSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        missingSurface
+    );
+
+    assert(
+        containsText(
+            missingSurface,
+            "ΤΟ ΓΕΓΟΝΟΣ ΔΕΝ ΒΡΕΘΗΚΕ"
+        )
+    );
+}
+
 int main()
 {
     test_renderer_clears_with_dark_background();
@@ -745,6 +970,9 @@ int main()
     test_month_renders_title_weekdays_and_all_cells();
     test_month_renders_selected_today_and_event_states();
     test_month_renders_disabled_navigation_and_adjacent_dates();
+    test_day_renders_three_rows_and_page_state();
+    test_day_uses_all_day_label_and_utf8_safe_preview();
+    test_event_details_render_event_or_safe_error();
 
     std::cout
         << "All agenda renderer tests passed.\n";

@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "agenda_renderer.h"
+#include "core/utf8.h"
 
 namespace
 {
@@ -26,9 +27,9 @@ std::string formatDate(
     const Date& value
 )
 {
-    std::ostringstream stream;
+    std::ostringstream output;
 
-    stream
+    output
         << std::setfill('0')
         << std::setw(2)
         << value.day
@@ -39,16 +40,16 @@ std::string formatDate(
         << std::setw(4)
         << value.year;
 
-    return stream.str();
+    return output.str();
 }
 
 std::string formatTime(
     const TimeOfDay& value
 )
 {
-    std::ostringstream stream;
+    std::ostringstream output;
 
-    stream
+    output
         << std::setfill('0')
         << std::setw(2)
         << value.hour
@@ -56,42 +57,40 @@ std::string formatTime(
         << std::setw(2)
         << value.minute;
 
-    return stream.str();
+    return output.str();
 }
 
-std::string_view controllerErrorText(
+std::string controllerErrorText(
     AgendaControllerError error
 )
 {
     switch (error)
     {
-        case AgendaControllerError::None:
-            return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+    case AgendaControllerError::ReadFailed:
+        return "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ";
 
-        case AgendaControllerError::NotReady:
-            return "ΜΗ ΕΤΟΙΜΟ";
+    case AgendaControllerError::WriteFailed:
+        return "ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ";
 
-        case AgendaControllerError::ReadFailed:
-            return "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ";
+    case AgendaControllerError::InvalidData:
+        return "ΜΗ ΕΓΚΥΡΑ ΔΕΔΟΜΕΝΑ";
 
-        case AgendaControllerError::WriteFailed:
-            return "ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ";
+    case AgendaControllerError::NotReady:
+        return "ΜΗ ΕΤΟΙΜΟ";
 
-        case AgendaControllerError::InvalidData:
-            return "ΜΗ ΕΓΚΥΡΑ ΔΕΔΟΜΕΝΑ";
+    case AgendaControllerError::None:
+        return "";
     }
 
-    return "ΑΓΝΩΣΤΟ ΣΦΑΛΜΑ";
+    return "";
 }
 
-std::string_view greekMonthName(
-    int month
-)
+std::string greekMonthName(int month)
 {
     constexpr std::array<
         std::string_view,
         12
-    > names{
+    > MONTH_NAMES{
         "ΙΑΝΟΥΑΡΙΟΣ",
         "ΦΕΒΡΟΥΑΡΙΟΣ",
         "ΜΑΡΤΙΟΣ",
@@ -111,14 +110,16 @@ std::string_view greekMonthName(
         month > 12
     )
     {
-        return "ΑΓΝΩΣΤΟΣ";
+        return "";
     }
 
-    return names[
-        static_cast<std::size_t>(
-            month - 1
-        )
-    ];
+    return std::string(
+        MONTH_NAMES[
+            static_cast<std::size_t>(
+                month - 1
+            )
+        ]
+    );
 }
 
 UiRect monthCellBounds(
@@ -126,27 +127,34 @@ UiRect monthCellBounds(
 )
 {
     const int column =
-        static_cast<int>(
-            index % 7
-        );
+        static_cast<int>(index % 7);
 
     const int row =
-        static_cast<int>(
-            index / 7
-        );
+        static_cast<int>(index / 7);
 
     return UiRect{
         AgendaUiLayout::MonthGrid.x +
             column *
-                AgendaUiLayout::
-                    MonthCellWidth,
+                AgendaUiLayout::MonthCellWidth,
         AgendaUiLayout::MonthGrid.y +
             row *
-                AgendaUiLayout::
-                    MonthCellHeight,
+                AgendaUiLayout::MonthCellHeight,
         AgendaUiLayout::MonthCellWidth,
         AgendaUiLayout::MonthCellHeight
     };
+}
+
+UiRect dayRowBounds(
+    std::size_t index
+)
+{
+    constexpr std::array<UiRect, 3> rows{
+        AgendaUiLayout::DayRow0,
+        AgendaUiLayout::DayRow1,
+        AgendaUiLayout::DayRow2
+    };
+
+    return rows[index];
 }
 
 void drawButton(
@@ -264,10 +272,8 @@ void renderMonth(
 )
 {
     const std::string title =
-        std::string(
-            greekMonthName(
-                view.displayedMonth.month
-            )
+        greekMonthName(
+            view.displayedMonth.month
         ) +
         " " +
         std::to_string(
@@ -305,7 +311,7 @@ void renderMonth(
     constexpr std::array<
         std::string_view,
         7
-    > weekdays{
+    > WEEKDAYS{
         "ΔΕ",
         "ΤΡ",
         "ΤΕ",
@@ -317,27 +323,22 @@ void renderMonth(
 
     for (
         std::size_t index = 0;
-        index < weekdays.size();
+        index < WEEKDAYS.size();
         ++index
     )
     {
         const UiRect bounds{
-            AgendaUiLayout::
-                MonthWeekdays.x +
+            AgendaUiLayout::MonthWeekdays.x +
                 static_cast<int>(index) *
-                    AgendaUiLayout::
-                        MonthCellWidth,
-            AgendaUiLayout::
-                MonthWeekdays.y,
-            AgendaUiLayout::
-                MonthCellWidth,
-            AgendaUiLayout::
-                MonthWeekdays.height
+                    AgendaUiLayout::MonthCellWidth,
+            AgendaUiLayout::MonthWeekdays.y,
+            AgendaUiLayout::MonthCellWidth,
+            AgendaUiLayout::MonthWeekdays.height
         };
 
         surface.drawText(
             bounds,
-            weekdays[index],
+            WEEKDAYS[index],
             UiTextStyle::Caption,
             AgendaUiColors::SecondaryText,
             UiTextAlignment::Center
@@ -387,18 +388,15 @@ void renderMonth(
             );
         }
 
-        UiColor numberColor =
+        UiColor textColor =
             cell.inDisplayedMonth
-                ? AgendaUiColors::
-                    PrimaryText
-                : AgendaUiColors::
-                    Disabled;
+            ? AgendaUiColors::PrimaryText
+            : AgendaUiColors::Disabled;
 
         if (cell.isSelected)
         {
-            numberColor =
-                AgendaUiColors::
-                    Background;
+            textColor =
+                AgendaUiColors::Background;
         }
 
         surface.drawText(
@@ -407,29 +405,246 @@ void renderMonth(
                 cell.date->day
             ),
             UiTextStyle::Caption,
-            numberColor,
+            textColor,
             UiTextAlignment::Center
         );
 
         if (cell.hasEvents)
         {
-            const UiPoint marker{
-                center.x,
-                bounds.y +
-                    bounds.height - 2
-            };
-
             surface.fillCircle(
-                marker,
+                UiPoint{
+                    center.x,
+                    bounds.y +
+                        bounds.height - 3
+                },
                 2,
-                cell.isSelected
-                    ? AgendaUiColors::
-                        Background
-                    : AgendaUiColors::
-                        Accent
+                AgendaUiColors::Accent
             );
         }
     }
+}
+
+void renderDay(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    if (!view.selectedDate.has_value())
+    {
+        return;
+    }
+
+    surface.drawText(
+        AgendaUiLayout::Header,
+        formatDate(
+            *view.selectedDate
+        ),
+        UiTextStyle::Heading,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    const std::size_t rowCount =
+        view.dayEvents.size() <
+            AGENDA_UI_EVENTS_PER_PAGE
+        ? view.dayEvents.size()
+        : AGENDA_UI_EVENTS_PER_PAGE;
+
+    for (
+        std::size_t index = 0;
+        index < rowCount;
+        ++index
+    )
+    {
+        const AgendaUiEventRow& eventRow =
+            view.dayEvents[index];
+
+        const UiRect bounds =
+            dayRowBounds(index);
+
+        const UiRect timeBounds{
+            bounds.x + 8,
+            bounds.y,
+            58,
+            bounds.height
+        };
+
+        const UiRect textBounds{
+            bounds.x + 70,
+            bounds.y,
+            bounds.width - 78,
+            bounds.height
+        };
+
+        surface.fillRoundedRectangle(
+            bounds,
+            8,
+            AgendaUiColors::Surface
+        );
+
+        const std::string timeText =
+            eventRow.time.has_value()
+            ? formatTime(*eventRow.time)
+            : "ΟΛΗ ΜΕΡΑ";
+
+        surface.drawText(
+            timeBounds,
+            timeText,
+            UiTextStyle::Caption,
+            AgendaUiColors::Accent,
+            UiTextAlignment::Left
+        );
+
+        surface.drawText(
+            textBounds,
+            utf8Prefix(
+                eventRow.text,
+                32
+            ),
+            UiTextStyle::Body,
+            AgendaUiColors::PrimaryText,
+            UiTextAlignment::Left
+        );
+    }
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "<",
+        UiTextStyle::Heading,
+        view.dayPreviousEnabled
+            ? AgendaUiColors::Accent
+            : AgendaUiColors::Disabled,
+        UiTextAlignment::Center
+    );
+
+    if (view.dayPageCount > 0)
+    {
+        const std::string pageText =
+            std::to_string(
+                view.dayPageIndex + 1
+            ) +
+            "/" +
+            std::to_string(
+                view.dayPageCount
+            );
+
+        surface.drawText(
+            AgendaUiLayout::FooterCenter,
+            pageText,
+            UiTextStyle::Body,
+            AgendaUiColors::SecondaryText,
+            UiTextAlignment::Center
+        );
+    }
+
+    surface.drawText(
+        AgendaUiLayout::FooterRight,
+        ">",
+        UiTextStyle::Heading,
+        view.dayNextEnabled
+            ? AgendaUiColors::Accent
+            : AgendaUiColors::Disabled,
+        UiTextAlignment::Center
+    );
+}
+
+void renderEventDetails(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    surface.drawText(
+        AgendaUiLayout::Header,
+        "ΓΕΓΟΝΟΣ",
+        UiTextStyle::Heading,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    if (!view.selectedEvent.has_value())
+    {
+        surface.drawText(
+            AgendaUiLayout::Content,
+            "ΤΟ ΓΕΓΟΝΟΣ ΔΕΝ ΒΡΕΘΗΚΕ",
+            UiTextStyle::Body,
+            AgendaUiColors::Error,
+            UiTextAlignment::Center
+        );
+
+        return;
+    }
+
+    const Event& event =
+        *view.selectedEvent;
+
+    surface.drawText(
+        AgendaUiLayout::Subheader,
+        formatDate(
+            event.eventDate
+        ),
+        UiTextStyle::Body,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    const UiRect timeBounds{
+        28,
+        60,
+        184,
+        26
+    };
+
+    const UiRect textBounds{
+        28,
+        92,
+        184,
+        84
+    };
+
+    const std::string timeText =
+        event.eventTime.has_value()
+        ? formatTime(*event.eventTime)
+        : "ΟΛΗ ΜΕΡΑ";
+
+    surface.drawText(
+        timeBounds,
+        timeText,
+        UiTextStyle::Heading,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        textBounds,
+        event.text,
+        UiTextStyle::Body,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "ΠΙΣΩ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterCenter,
+        "ΑΛΛΑΓΗ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterRight,
+        "ΔΙΑΓΡΑΦΗ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Error,
+        UiTextAlignment::Center
+    );
 }
 
 void renderSafeFallback(
@@ -457,29 +672,45 @@ void AgendaRenderer::render(
 
     switch (view.screen)
     {
-        case AgendaUiScreen::ClockSetup:
-            renderClockSetup(
-                view,
-                surface
-            );
-            break;
+    case AgendaUiScreen::ClockSetup:
+        renderClockSetup(
+            view,
+            surface
+        );
+        break;
 
-        case AgendaUiScreen::Month:
-            renderMonth(
-                view,
-                surface
-            );
-            break;
+    case AgendaUiScreen::Month:
+        renderMonth(
+            view,
+            surface
+        );
+        break;
 
-        case AgendaUiScreen::StartupError:
-            renderStartupError(
-                view,
-                surface
-            );
-            break;
+    case AgendaUiScreen::Day:
+        renderDay(
+            view,
+            surface
+        );
+        break;
 
-        default:
-            renderSafeFallback(surface);
-            break;
+    case AgendaUiScreen::EventDetails:
+        renderEventDetails(
+            view,
+            surface
+        );
+        break;
+
+    case AgendaUiScreen::StartupError:
+        renderStartupError(
+            view,
+            surface
+        );
+        break;
+
+    default:
+        renderSafeFallback(
+            surface
+        );
+        break;
     }
 }
