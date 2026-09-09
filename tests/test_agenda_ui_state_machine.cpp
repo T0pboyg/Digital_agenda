@@ -3157,6 +3157,297 @@ void test_primary_read_failure_preserves_create_draft()
     assert(backup.writeCount == 0);
 }
 
+
+void test_confirmed_delete_is_transactional_and_clamps_page()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    1,
+                    Date{2026, 9, 9},
+                    "One"
+                ),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 9},
+                    "Two"
+                ),
+                uiStoredEvent(
+                    3,
+                    Date{2026, 9, 9},
+                    "Three"
+                ),
+                uiStoredEvent(
+                    4,
+                    Date{2026, 9, 9},
+                    "Four"
+                )
+            },
+            5
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        {AgendaUiActionType::NextDayPage}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            4
+        }
+    );
+
+    const std::size_t writesBefore =
+        storage.writeCount;
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::ConfirmDelete
+    );
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    assert(view.selectedEvent.has_value());
+    assert(view.selectedEvent->id == 4);
+    assert(controller.agenda().size() == 4);
+    assert(storage.writeCount == writesBefore);
+
+    ui.handle(
+        {AgendaUiActionType::CancelDelete}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ConfirmDelete}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(view.dayPageIndex == 0);
+
+    assert(
+        controller.agenda().findEvent(4) ==
+        nullptr
+    );
+
+    assert(controller.agenda().size() == 3);
+
+    assert(
+        storage.writeCount ==
+        writesBefore + 1
+    );
+}
+
+void test_delete_failure_retries_same_event()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    7,
+                    Date{2026, 9, 9},
+                    "Keep until saved"
+                )
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    storage.writeError =
+        ByteStorageError::WriteFailed;
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ConfirmDelete}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::OperationError
+    );
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    assert(view.selectedEvent.has_value());
+    assert(view.selectedEvent->id == 7);
+
+    assert(
+        controller.agenda().findEvent(7) !=
+        nullptr
+    );
+
+    storage.writeError =
+        ByteStorageError::None;
+
+    ui.handle(
+        {AgendaUiActionType::RetryOperation}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        controller.agenda().findEvent(7) ==
+        nullptr
+    );
+}
+
+void test_stale_details_selection_returns_to_day()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    7,
+                    Date{2026, 9, 9},
+                    "External delete"
+                )
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    const AgendaControllerChangeResult result =
+        controller.deleteEvent(7);
+
+    assert(
+        result.error ==
+        AgendaControllerError::None
+    );
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(!view.selectedEvent.has_value());
+}
+
+
 int main()
 {
     test_valid_startup_opens_current_month();
@@ -3204,6 +3495,9 @@ int main()
     test_past_event_error_keeps_update_draft();
     test_storage_and_clock_failures_preserve_draft_and_retry();
     test_primary_read_failure_preserves_create_draft();
+    test_confirmed_delete_is_transactional_and_clamps_page();
+    test_delete_failure_retries_same_event();
+    test_stale_details_selection_returns_to_day();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";

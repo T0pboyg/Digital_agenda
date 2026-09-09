@@ -257,6 +257,30 @@ void AgendaUiStateMachine::handle(
 
     if (
         overlay_ ==
+        AgendaUiOverlay::ConfirmDelete
+    )
+    {
+        if (
+            action.type ==
+            AgendaUiActionType::CancelDelete
+        )
+        {
+            overlay_ = AgendaUiOverlay::None;
+        }
+        else if (
+            action.type ==
+            AgendaUiActionType::ConfirmDelete
+        )
+        {
+            overlay_ = AgendaUiOverlay::None;
+            confirmDelete();
+        }
+
+        return;
+    }
+
+    if (
+        overlay_ ==
             AgendaUiOverlay::OperationError ||
         overlay_ ==
             AgendaUiOverlay::ClockError
@@ -307,6 +331,31 @@ void AgendaUiStateMachine::handle(
             screen_ = AgendaUiScreen::Day;
             return;
         }
+    }
+
+    if (
+        screen_ ==
+            AgendaUiScreen::EventDetails &&
+        action.type ==
+            AgendaUiActionType::RequestDelete
+    )
+    {
+        if (
+            !selectedEventId_.has_value() ||
+            controller_.agenda().findEvent(
+                *selectedEventId_
+            ) == nullptr
+        )
+        {
+            selectedEventId_.reset();
+            screen_ = AgendaUiScreen::Day;
+            return;
+        }
+
+        overlay_ =
+            AgendaUiOverlay::ConfirmDelete;
+
+        return;
     }
 
     if (
@@ -1296,9 +1345,86 @@ void AgendaUiStateMachine::saveEditor()
     resetErrors();
 }
 
+void AgendaUiStateMachine::confirmDelete()
+{
+    if (!selectedEventId_.has_value())
+    {
+        screen_ = AgendaUiScreen::Day;
+        return;
+    }
+
+    resetErrors();
+
+    const AgendaControllerChangeResult result =
+        controller_.deleteEvent(
+            *selectedEventId_
+        );
+
+    if (
+        result.eventError ==
+        EventError::EventNotFound
+    )
+    {
+        selectedEventId_.reset();
+
+        pendingOperation_ =
+            AgendaUiPendingOperation::None;
+
+        screen_ = AgendaUiScreen::Day;
+
+        clampDayPage();
+        return;
+    }
+
+    if (
+        result.eventError !=
+        EventError::None
+    )
+    {
+        eventError_ = result.eventError;
+        return;
+    }
+
+    if (
+        result.error !=
+        AgendaControllerError::None
+    )
+    {
+        controllerError_ = result.error;
+
+        pendingOperation_ =
+            AgendaUiPendingOperation::
+                DeleteEvent;
+
+        overlay_ =
+            AgendaUiOverlay::OperationError;
+
+        return;
+    }
+
+    selectedEventId_.reset();
+
+    pendingOperation_ =
+        AgendaUiPendingOperation::None;
+
+    overlay_ = AgendaUiOverlay::None;
+    screen_ = AgendaUiScreen::Day;
+
+    clampDayPage();
+}
+
 void AgendaUiStateMachine::
     retryPendingOperation()
 {
+    if (
+        pendingOperation_ ==
+        AgendaUiPendingOperation::DeleteEvent
+    )
+    {
+        confirmDelete();
+        return;
+    }
+
     if (
         pendingOperation_ ==
             AgendaUiPendingOperation::
