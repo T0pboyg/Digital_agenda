@@ -5,7 +5,9 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstddef>
 
+#include "core/calendar_engine.h"
 #include "ui/agenda_renderer.h"
 
 enum class DrawCommandType
@@ -260,6 +262,42 @@ bool containsText(
     );
 }
 
+bool containsTextWithColor(
+    const RecordingDrawSurface& surface,
+    std::string_view expected,
+    UiColor color
+)
+{
+    return std::any_of(
+        surface.commands.begin(),
+        surface.commands.end(),
+        [expected, color](
+            const DrawCommand& command
+        )
+        {
+            return
+                command.type ==
+                    DrawCommandType::DrawText &&
+                command.text == expected &&
+                command.color == color;
+        }
+    );
+}
+
+bool rectInside(
+    const UiRect& inner,
+    const UiRect& outer
+)
+{
+    return
+        inner.x >= outer.x &&
+        inner.y >= outer.y &&
+        inner.x + inner.width <=
+            outer.x + outer.width &&
+        inner.y + inner.height <=
+            outer.y + outer.height;
+}
+
 bool pointInDisplay(
     UiPoint value
 )
@@ -506,6 +544,197 @@ void test_clock_setup_uses_only_in_bounds_commands()
     );
 }
 
+AgendaUiView septemberMonthView()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::Month;
+
+    view.displayedMonth =
+        YearMonth{2026, 9};
+
+    view.monthPreviousEnabled = true;
+    view.monthNextEnabled = true;
+
+    const MonthGrid grid =
+        buildMonthGrid(
+            view.displayedMonth
+        );
+
+    for (
+        std::size_t index = 0;
+        index < grid.size();
+        ++index
+    )
+    {
+        view.monthCells[index].date =
+            grid[index].date;
+
+        view.monthCells[index].
+            inDisplayedMonth =
+                grid[index].
+                    inDisplayedMonth;
+    }
+
+    return view;
+}
+
+void test_month_renders_title_weekdays_and_all_cells()
+{
+    const AgendaUiView view =
+        septemberMonthView();
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΣΕΠΤΕΜΒΡΙΟΣ 2026"
+        )
+    );
+
+    assert(containsText(surface, "ΔΕ"));
+    assert(containsText(surface, "ΤΡ"));
+    assert(containsText(surface, "ΤΕ"));
+    assert(containsText(surface, "ΠΕ"));
+    assert(containsText(surface, "ΠΑ"));
+    assert(containsText(surface, "ΣΑ"));
+    assert(containsText(surface, "ΚΥ"));
+
+    const std::size_t cellTextCount =
+        static_cast<std::size_t>(
+            std::count_if(
+                surface.commands.begin(),
+                surface.commands.end(),
+                [](
+                    const DrawCommand& command
+                )
+                {
+                    return
+                        command.type ==
+                            DrawCommandType::
+                                DrawText &&
+                        rectInside(
+                            command.bounds,
+                            AgendaUiLayout::
+                                MonthGrid
+                        );
+                }
+            )
+        );
+
+    assert(cellTextCount == 42);
+}
+
+void test_month_renders_selected_today_and_event_states()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.monthCells[10].isSelected =
+        true;
+
+    view.monthCells[11].isToday =
+        true;
+
+    view.monthCells[12].hasEvents =
+        true;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    const std::size_t accentFills =
+        static_cast<std::size_t>(
+            std::count_if(
+                surface.commands.begin(),
+                surface.commands.end(),
+                [](
+                    const DrawCommand& command
+                )
+                {
+                    return
+                        command.type ==
+                            DrawCommandType::
+                                FillCircle &&
+                        command.color ==
+                            AgendaUiColors::
+                                Accent;
+                }
+            )
+        );
+
+    const bool hasTodayOutline =
+        std::any_of(
+            surface.commands.begin(),
+            surface.commands.end(),
+            [](
+                const DrawCommand& command
+            )
+            {
+                return
+                    command.type ==
+                        DrawCommandType::
+                            DrawCircle &&
+                    command.color ==
+                        AgendaUiColors::
+                            Accent;
+            }
+        );
+
+    assert(accentFills >= 2);
+    assert(hasTodayOutline);
+}
+
+void test_month_renders_disabled_navigation_and_adjacent_dates()
+{
+    AgendaUiView view =
+        septemberMonthView();
+
+    view.monthPreviousEnabled = false;
+    view.monthNextEnabled = true;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsTextWithColor(
+            surface,
+            "<",
+            AgendaUiColors::Disabled
+        )
+    );
+
+    assert(
+        containsTextWithColor(
+            surface,
+            ">",
+            AgendaUiColors::PrimaryText
+        )
+    );
+
+    assert(
+        containsTextWithColor(
+            surface,
+            "31",
+            AgendaUiColors::Disabled
+        )
+    );
+}
+
 int main()
 {
     test_renderer_clears_with_dark_background();
@@ -513,6 +742,9 @@ int main()
     test_startup_error_shows_retry_action();
     test_clock_setup_formats_date_and_time();
     test_clock_setup_uses_only_in_bounds_commands();
+    test_month_renders_title_weekdays_and_all_cells();
+    test_month_renders_selected_today_and_event_states();
+    test_month_renders_disabled_navigation_and_adjacent_dates();
 
     std::cout
         << "All agenda renderer tests passed.\n";
