@@ -161,3 +161,86 @@ bool isValidUtf8(std::string_view text)
 
     return true;
 }
+
+std::string utf8Prefix(
+    std::string_view text,
+    std::size_t maximumCodePoints
+)
+{
+    std::size_t position = 0;
+    std::size_t count = 0;
+
+    while (
+        position < text.size() &&
+        count < maximumCodePoints
+    )
+    {
+        const unsigned char lead =
+            static_cast<unsigned char>(
+                text[position]
+            );
+
+        std::size_t length = 0;
+
+        if (lead <= 0x7F)
+        {
+            length = 1;
+        }
+        else if ((lead & 0xE0) == 0xC0)
+        {
+            length = 2;
+        }
+        else if ((lead & 0xF0) == 0xE0)
+        {
+            length = 3;
+        }
+        else if ((lead & 0xF8) == 0xF0)
+        {
+            length = 4;
+        }
+        else
+        {
+            break;
+        }
+
+        if (position + length > text.size())
+        {
+            break;
+        }
+
+        bool complete = true;
+
+        for (
+            std::size_t offset = 1;
+            offset < length;
+            ++offset
+        )
+        {
+            const unsigned char continuation =
+                static_cast<unsigned char>(
+                    text[position + offset]
+                );
+
+            if (
+                (continuation & 0xC0) !=
+                0x80
+            )
+            {
+                complete = false;
+                break;
+            }
+        }
+
+        if (!complete)
+        {
+            break;
+        }
+
+        position += length;
+        ++count;
+    }
+
+    return std::string(
+        text.substr(0, position)
+    );
+}

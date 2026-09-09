@@ -107,6 +107,42 @@ void test_rejects_invalid_utf8_sequences()
     );
 }
 
+void test_utf8_prefix_limits_ascii_text()
+{
+    assert(
+        utf8Prefix("abcdef", 3) ==
+        "abc"
+    );
+}
+
+void test_utf8_prefix_preserves_greek_code_points()
+{
+    const std::string result =
+        utf8Prefix(
+            "Ημερολόγιο",
+            4
+        );
+
+    assert(result == "Ημερ");
+    assert(isValidUtf8(result));
+
+    assert(
+        utf8CodePointCount(result) == 4
+    );
+}
+
+void test_utf8_prefix_handles_limit_edges()
+{
+    assert(
+        utf8Prefix("abc", 0).empty()
+    );
+
+    assert(
+        utf8Prefix("abc", 9) ==
+        "abc"
+    );
+}
+
 int main()
 {
     test_counts_ascii_characters();
@@ -117,6 +153,9 @@ int main()
     test_empty_text_cannot_be_removed();
     test_accepts_valid_utf8_sequences();
     test_rejects_invalid_utf8_sequences();
+    test_utf8_prefix_limits_ascii_text();
+    test_utf8_prefix_preserves_greek_code_points();
+    test_utf8_prefix_handles_limit_edges();
 
     std::cout << "All UTF-8 tests passed.\n";
 
