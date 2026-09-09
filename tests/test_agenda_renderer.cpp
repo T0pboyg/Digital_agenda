@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -239,6 +240,116 @@ private:
     }
 };
 
+bool containsText(
+    const RecordingDrawSurface& surface,
+    std::string_view expected
+)
+{
+    return std::any_of(
+        surface.commands.begin(),
+        surface.commands.end(),
+        [expected](
+            const DrawCommand& command
+        )
+        {
+            return
+                command.type ==
+                    DrawCommandType::DrawText &&
+                command.text == expected;
+        }
+    );
+}
+
+bool pointInDisplay(
+    UiPoint value
+)
+{
+    return
+        value.x >= 0 &&
+        value.y >= 0 &&
+        value.x <
+            AGENDA_UI_DISPLAY_WIDTH &&
+        value.y <
+            AGENDA_UI_DISPLAY_HEIGHT;
+}
+
+bool rectInDisplay(
+    const UiRect& value
+)
+{
+    return
+        value.x >= 0 &&
+        value.y >= 0 &&
+        value.width >= 0 &&
+        value.height >= 0 &&
+        value.x + value.width <=
+            AGENDA_UI_DISPLAY_WIDTH &&
+        value.y + value.height <=
+            AGENDA_UI_DISPLAY_HEIGHT;
+}
+
+bool commandInDisplay(
+    const DrawCommand& command
+)
+{
+    if (
+        command.type ==
+        DrawCommandType::Clear
+    )
+    {
+        return true;
+    }
+
+    if (
+        command.type ==
+        DrawCommandType::DrawLine
+    )
+    {
+        return
+            pointInDisplay(
+                command.start
+            ) &&
+            pointInDisplay(
+                command.end
+            );
+    }
+
+    if (
+        command.type ==
+            DrawCommandType::FillCircle ||
+        command.type ==
+            DrawCommandType::DrawCircle
+    )
+    {
+        return
+            command.start.x -
+                command.radius >= 0 &&
+            command.start.y -
+                command.radius >= 0 &&
+            command.start.x +
+                command.radius <
+                AGENDA_UI_DISPLAY_WIDTH &&
+            command.start.y +
+                command.radius <
+                AGENDA_UI_DISPLAY_HEIGHT;
+    }
+
+    return rectInDisplay(
+        command.bounds
+    );
+}
+
+bool allCommandsInBounds(
+    const RecordingDrawSurface& surface
+)
+{
+    return std::all_of(
+        surface.commands.begin(),
+        surface.commands.end(),
+        commandInDisplay
+    );
+}
+
 void test_renderer_clears_with_dark_background()
 {
     AgendaUiView view;
@@ -289,10 +400,119 @@ void test_renderer_does_not_change_input_view()
     assert(view.dayPageCount == 3);
 }
 
+void test_startup_error_shows_retry_action()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::StartupError;
+
+    view.controllerError =
+        AgendaControllerError::ReadFailed;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΣΦΑΛΜΑ ΕΚΚΙΝΗΣΗΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΞΑΝΑ"
+        )
+    );
+}
+
+void test_clock_setup_formats_date_and_time()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::ClockSetup;
+
+    view.clockDraft = DateTime{
+        Date{2026, 9, 9},
+        TimeOfDay{7, 5}
+    };
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΡΥΘΜΙΣΗ ΩΡΑΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "09/09/2026"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "07:05"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΕΝΤΑΞΕΙ"
+        )
+    );
+}
+
+void test_clock_setup_uses_only_in_bounds_commands()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::ClockSetup;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        allCommandsInBounds(surface)
+    );
+}
+
 int main()
 {
     test_renderer_clears_with_dark_background();
     test_renderer_does_not_change_input_view();
+    test_startup_error_shows_retry_action();
+    test_clock_setup_formats_date_and_time();
+    test_clock_setup_uses_only_in_bounds_commands();
 
     std::cout
         << "All agenda renderer tests passed.\n";
