@@ -264,6 +264,37 @@ bool containsText(
     );
 }
 
+const DrawCommand* findTextCommand(
+    const RecordingDrawSurface& surface,
+    std::string_view expected
+)
+{
+    const auto found =
+        std::find_if(
+            surface.commands.begin(),
+            surface.commands.end(),
+            [expected](
+                const DrawCommand& command
+            )
+            {
+                return
+                    command.type ==
+                        DrawCommandType::DrawText &&
+                    command.text == expected;
+            }
+        );
+
+    if (
+        found ==
+        surface.commands.end()
+    )
+    {
+        return nullptr;
+    }
+
+    return &*found;
+}
+
 bool containsTextWithColor(
     const RecordingDrawSurface& surface,
     std::string_view expected,
@@ -1160,6 +1191,196 @@ void test_editor_review_renders_create_and_update_variants()
     );
 }
 
+void test_t9_editor_renders_greek_letters_and_twelve_keys()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorText;
+
+    view.t9Language =
+        T9Language::Greek;
+
+    view.t9Mode =
+        T9Mode::Letters;
+
+    view.t9Uppercase = false;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΕΛ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΓΡΑΜΜΑΤΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "πεζά"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "2 ΑΒΓ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "7 ΠΡΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "9 ΧΨΩ"
+        )
+    );
+
+    const std::size_t keyCount =
+        static_cast<std::size_t>(
+            std::count_if(
+                surface.commands.begin(),
+                surface.commands.end(),
+                [](const DrawCommand& command)
+                {
+                    return
+                        command.type ==
+                            DrawCommandType::
+                                FillRoundedRectangle &&
+                        command.bounds.x >=
+                            AgendaUiLayout::T9GridX &&
+                        command.bounds.y >=
+                            AgendaUiLayout::T9GridY &&
+                        command.bounds.y < 190;
+                }
+            )
+        );
+
+    assert(keyCount == 12);
+}
+
+void test_t9_editor_renders_english_numbers_and_case_state()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorText;
+
+    view.t9Language =
+        T9Language::English;
+
+    view.t9Mode =
+        T9Mode::Numbers;
+
+    view.t9Uppercase = true;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "EN"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΑΡΙΘΜΟΙ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΚΕΦΑΛΑΙΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "2"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "9"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "0"
+        )
+    );
+}
+
+void test_t9_editor_preview_is_utf8_safe()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorText;
+
+    view.editor.text =
+        "Αυτό το κείμενο είναι αρκετά μεγάλο ώστε "
+        "να χρειάζεται ασφαλή περικοπή χαρακτήρων";
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    const std::string expected =
+        utf8Prefix(
+            view.editor.text,
+            48
+        );
+
+    const DrawCommand* preview =
+        findTextCommand(
+            surface,
+            expected
+        );
+
+    assert(preview != nullptr);
+    assert(isValidUtf8(preview->text));
+
+    assert(
+        utf8CodePointCount(
+            preview->text
+        ) <= 48
+    );
+}
+
+
 int main()
 {
     test_renderer_clears_with_dark_background();
@@ -1176,6 +1397,9 @@ int main()
     test_editor_date_renders_draft_and_navigation();
     test_editor_time_renders_timed_and_all_day_variants();
     test_editor_review_renders_create_and_update_variants();
+    test_t9_editor_renders_greek_letters_and_twelve_keys();
+    test_t9_editor_renders_english_numbers_and_case_state();
+    test_t9_editor_preview_is_utf8_safe();
 
     std::cout
         << "All agenda renderer tests passed.\n";

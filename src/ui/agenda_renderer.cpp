@@ -861,6 +861,221 @@ void renderEditorReview(
     );
 }
 
+UiRect t9KeyBounds(
+    std::size_t index
+)
+{
+    const int column =
+        static_cast<int>(index % 3);
+
+    const int row =
+        static_cast<int>(index / 3);
+
+    return UiRect{
+        AgendaUiLayout::T9GridX +
+            column *
+                (
+                    AgendaUiLayout::T9KeyWidth +
+                    AgendaUiLayout::T9ColumnGap
+                ),
+        AgendaUiLayout::T9GridY +
+            row *
+                (
+                    AgendaUiLayout::T9KeyHeight +
+                    AgendaUiLayout::T9RowGap
+                ),
+        AgendaUiLayout::T9KeyWidth,
+        AgendaUiLayout::T9KeyHeight
+    };
+}
+
+std::array<std::string, 12> t9Labels(
+    T9Language language,
+    T9Mode mode
+)
+{
+    if (mode == T9Mode::Numbers)
+    {
+        return {
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "*",
+            "0",
+            "#"
+        };
+    }
+
+    if (language == T9Language::English)
+    {
+        return {
+            "1",
+            "2 ABC",
+            "3 DEF",
+            "4 GHI",
+            "5 JKL",
+            "6 MNO",
+            "7 PQRS",
+            "8 TUV",
+            "9 WXYZ",
+            "*",
+            "0",
+            "#"
+        };
+    }
+
+    return {
+        "1",
+        "2 ΑΒΓ",
+        "3 ΔΕΖ",
+        "4 ΗΘΙ",
+        "5 ΚΛΜ",
+        "6 ΝΞΟ",
+        "7 ΠΡΣ",
+        "8 ΤΥΦ",
+        "9 ΧΨΩ",
+        "*",
+        "0",
+        "#"
+    };
+}
+
+void renderEditorText(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    surface.drawText(
+        AgendaUiLayout::Header,
+        "ΚΕΙΜΕΝΟ",
+        UiTextStyle::Title,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.fillRoundedRectangle(
+        AgendaUiLayout::T9Preview,
+        8,
+        AgendaUiColors::Surface
+    );
+
+    surface.drawText(
+        AgendaUiLayout::T9Preview,
+        utf8Prefix(
+            view.editor.text,
+            48
+        ),
+        UiTextStyle::Body,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Left
+    );
+
+    const UiRect languageBounds{
+        AgendaUiLayout::T9Status.x,
+        AgendaUiLayout::T9Status.y,
+        44,
+        AgendaUiLayout::T9Status.height
+    };
+
+    const UiRect modeBounds{
+        AgendaUiLayout::T9Status.x + 44,
+        AgendaUiLayout::T9Status.y,
+        76,
+        AgendaUiLayout::T9Status.height
+    };
+
+    const UiRect caseBounds{
+        AgendaUiLayout::T9Status.x + 120,
+        AgendaUiLayout::T9Status.y,
+        44,
+        AgendaUiLayout::T9Status.height
+    };
+
+    surface.drawText(
+        languageBounds,
+        view.t9Language ==
+            T9Language::Greek
+            ? "ΕΛ"
+            : "EN",
+        UiTextStyle::Caption,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        modeBounds,
+        view.t9Mode ==
+            T9Mode::Letters
+            ? "ΓΡΑΜΜΑΤΑ"
+            : "ΑΡΙΘΜΟΙ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        caseBounds,
+        view.t9Uppercase
+            ? "ΚΕΦΑΛΑΙΑ"
+            : "πεζά",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    const std::array<std::string, 12> labels =
+        t9Labels(
+            view.t9Language,
+            view.t9Mode
+        );
+
+    for (
+        std::size_t index = 0;
+        index < labels.size();
+        ++index
+    )
+    {
+        const UiRect bounds =
+            t9KeyBounds(index);
+
+        surface.fillRoundedRectangle(
+            bounds,
+            5,
+            AgendaUiColors::Surface
+        );
+
+        surface.drawText(
+            bounds,
+            labels[index],
+            UiTextStyle::Keypad,
+            AgendaUiColors::PrimaryText,
+            UiTextAlignment::Center
+        );
+    }
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "ΠΙΣΩ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterRight,
+        "ΕΠΟΜΕΝΟ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+}
+
 void renderSafeFallback(
     DrawSurface& surface
 )
@@ -923,6 +1138,13 @@ void AgendaRenderer::render(
 
     case AgendaUiScreen::EditorTime:
         renderEditorTime(
+            view,
+            surface
+        );
+        break;
+
+    case AgendaUiScreen::EditorText:
+        renderEditorText(
             view,
             surface
         );
