@@ -104,6 +104,64 @@ void test_leap_year_and_days_in_month()
     assert(daysInMonth(2026, 13) == 0);
 }
 
+void test_previous_and_next_date_cross_boundaries()
+{
+    const auto normalNext =
+        nextDate(Date{2026, 9, 8});
+
+    assert(normalNext.has_value());
+    assert(normalNext->year == 2026);
+    assert(normalNext->month == 9);
+    assert(normalNext->day == 9);
+
+    const auto leapNext =
+        nextDate(Date{2028, 2, 28});
+
+    assert(leapNext.has_value());
+    assert(leapNext->year == 2028);
+    assert(leapNext->month == 2);
+    assert(leapNext->day == 29);
+
+    const auto yearNext =
+        nextDate(Date{2026, 12, 31});
+
+    assert(yearNext.has_value());
+    assert(yearNext->year == 2027);
+    assert(yearNext->month == 1);
+    assert(yearNext->day == 1);
+
+    const auto yearPrevious =
+        previousDate(Date{2026, 1, 1});
+
+    assert(yearPrevious.has_value());
+    assert(yearPrevious->year == 2025);
+    assert(yearPrevious->month == 12);
+    assert(yearPrevious->day == 31);
+
+    const auto monthPrevious =
+        previousDate(Date{2026, 3, 1});
+
+    assert(monthPrevious.has_value());
+    assert(monthPrevious->year == 2026);
+    assert(monthPrevious->month == 2);
+    assert(monthPrevious->day == 28);
+}
+
+void test_date_steps_stop_at_supported_range()
+{
+    assert(
+        !previousDate(Date{2000, 1, 1}).has_value()
+    );
+
+    assert(
+        !nextDate(Date{2099, 12, 31}).has_value()
+    );
+
+    assert(
+        !nextDate(Date{2026, 2, 30}).has_value()
+    );
+}
+
 int main()
 {
     test_accepts_valid_dates();
@@ -116,6 +174,9 @@ int main()
     test_serial_minute_counts_minutes();
 
     test_leap_year_and_days_in_month();
+
+    test_previous_and_next_date_cross_boundaries();
+    test_date_steps_stop_at_supported_range();
 
     std::cout << "All date/time tests passed.\n";
 

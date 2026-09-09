@@ -78,75 +78,51 @@ std::string firstUiCodePoints(
 
 void moveToNextDate(Date& value)
 {
-    if (!isValidDate(value))
+    const std::optional<Date> moved =
+        nextDate(value);
+
+    if (moved.has_value())
     {
-        return;
+        value = *moved;
     }
-
-    if (
-        value.year == 2099 &&
-        value.month == 12 &&
-        value.day == 31
-    )
-    {
-        return;
-    }
-
-    const int finalDay =
-        daysInMonth(value.year, value.month);
-
-    if (value.day < finalDay)
-    {
-        ++value.day;
-        return;
-    }
-
-    value.day = 1;
-
-    if (value.month == 12)
-    {
-        value.month = 1;
-        ++value.year;
-        return;
-    }
-
-    ++value.month;
 }
 
 void moveToPreviousDate(Date& value)
 {
-    if (!isValidDate(value))
+    const std::optional<Date> moved =
+        previousDate(value);
+
+    if (moved.has_value())
+    {
+        value = *moved;
+    }
+}
+
+void adjustEditorMinutes(
+    std::optional<TimeOfDay>& value,
+    int delta
+)
+{
+    if (!value.has_value())
     {
         return;
     }
 
-    if (
-        value.year == 2000 &&
-        value.month == 1 &&
-        value.day == 1
-    )
-    {
-        return;
-    }
+    const int current =
+        value->hour * 60 +
+        value->minute;
 
-    if (value.day > 1)
-    {
-        --value.day;
-        return;
-    }
+    const int wrapped =
+        (
+            current +
+            delta +
+            1440
+        ) % 1440;
 
-    if (value.month == 1)
-    {
-        --value.year;
-        value.month = 12;
-    }
-    else
-    {
-        --value.month;
-    }
-
-    value.day =
-        daysInMonth(value.year, value.month);
+    value = TimeOfDay{
+        wrapped / 60,
+        wrapped % 60
+    };
 }
 }
 
@@ -159,7 +135,9 @@ AgendaUiStateMachine::AgendaUiStateMachine(
       clock_(clock),
       screen_(AgendaUiScreen::StartupError),
       overlay_(AgendaUiOverlay::None),
-      controllerError_(AgendaControllerError::None),
+      controllerError_(
+          AgendaControllerError::None
+      ),
       eventError_(EventError::None),
       clockError_(ClockError::None),
       clockSetupDefault_(clockSetupDefault),
@@ -173,7 +151,9 @@ AgendaUiStateMachine::AgendaUiStateMachine(
       selectedEventId_(),
       dayPageIndex_(0),
       editor_(),
-      editorReturnScreen_(AgendaUiScreen::Day),
+      editorReturnScreen_(
+          AgendaUiScreen::Day
+      ),
       t9_(),
       pendingOperation_(
           AgendaUiPendingOperation::None
@@ -253,6 +233,62 @@ void AgendaUiStateMachine::handle(
     }
 
     if (
+        overlay_ ==
+        AgendaUiOverlay::ConfirmDiscard
+    )
+    {
+        if (
+            action.type ==
+            AgendaUiActionType::CancelDiscard
+        )
+        {
+            overlay_ = AgendaUiOverlay::None;
+        }
+        else if (
+            action.type ==
+            AgendaUiActionType::ConfirmDiscard
+        )
+        {
+            leaveEditorAfterDiscard();
+        }
+
+        return;
+    }
+
+    if (overlay_ != AgendaUiOverlay::None)
+    {
+        return;
+    }
+
+    if (
+        screen_ ==
+        AgendaUiScreen::EventDetails
+    )
+    {
+        if (
+            !selectedEventId_.has_value() ||
+            controller_.agenda().findEvent(
+                *selectedEventId_
+            ) == nullptr
+        )
+        {
+            selectedEventId_.reset();
+            screen_ = AgendaUiScreen::Day;
+            return;
+        }
+    }
+    if (
+        screen_ ==
+            AgendaUiScreen::EventDetails &&
+        action.type ==
+            AgendaUiActionType::StartEdit
+    )
+    {
+        beginEdit();
+        return;
+    }
+
+    if (
         action.type ==
         AgendaUiActionType::Back
     )
@@ -276,113 +312,432 @@ void AgendaUiStateMachine::handle(
         }
     }
 
+    if (
+        screen_ == AgendaUiScreen::EditorDate ||
+        screen_ == AgendaUiScreen::EditorTime ||
+        screen_ == AgendaUiScreen::EditorText ||
+        screen_ == AgendaUiScreen::EditorReview
+    )
+    {
+        if (
+            action.type ==
+                AgendaUiActionType::EditorCancel ||
+            (
+                action.type ==
+                    AgendaUiActionType::EditorBack &&
+                screen_ ==
+                    AgendaUiScreen::EditorDate
+            )
+        )
+        {
+            if (editor_.dirty)
+            {
+                overlay_ =
+                    AgendaUiOverlay::ConfirmDiscard;
+            }
+            else
+            {
+                leaveEditorAfterDiscard();
+            }
+
+            return;
+        }
+
+        if (
+            screen_ ==
+                AgendaUiScreen::EditorDate &&
+            (
+                action.type ==
+                    AgendaUiActionType::
+                        EditorPreviousDay ||
+                action.type ==
+                    AgendaUiActionType::
+                        EditorNextDay
+            )
+        )
+        {
+            const std::optional<Date> moved =
+                action.type ==
+                    AgendaUiActionType::
+                        EditorPreviousDay
+                    ? previousDate(editor_.date)
+                    : nextDate(editor_.date);
+
+            if (moved.has_value())
+            {
+                editor_.date = *moved;
+                editor_.dirty = true;
+            }
+
+            return;
+        }
+
+        if (
+            screen_ ==
+            AgendaUiScreen::EditorTime
+        )
+        {
+            if (
+                action.type ==
+                AgendaUiActionType::
+                    ToggleEventTime
+            )
+            {
+                if (editor_.time.has_value())
+                {
+                    editor_.time.reset();
+                }
+                else
+                {
+                    editor_.time =
+                        TimeOfDay{12, 0};
+                }
+
+                editor_.dirty = true;
+                return;
+            }
+
+            int delta = 0;
+
+            if (
+                action.type ==
+                AgendaUiActionType::
+                    EditorPreviousHour
+            )
+            {
+                delta = -60;
+            }
+            else if (
+                action.type ==
+                AgendaUiActionType::
+                    EditorNextHour
+            )
+            {
+                delta = 60;
+            }
+            else if (
+                action.type ==
+                AgendaUiActionType::
+                    EditorPreviousMinute
+            )
+            {
+                delta = -5;
+            }
+            else if (
+                action.type ==
+                AgendaUiActionType::
+                    EditorNextMinute
+            )
+            {
+                delta = 5;
+            }
+
+            if (
+                delta != 0 &&
+                editor_.time.has_value()
+            )
+            {
+                adjustEditorMinutes(
+                    editor_.time,
+                    delta
+                );
+
+                editor_.dirty = true;
+                return;
+            }
+        }
+
+        if (
+            action.type ==
+            AgendaUiActionType::EditorNext
+        )
+        {
+            switch (screen_)
+            {
+                case AgendaUiScreen::EditorDate:
+                    screen_ =
+                        AgendaUiScreen::EditorTime;
+                    return;
+
+                case AgendaUiScreen::EditorTime:
+                    screen_ =
+                        AgendaUiScreen::EditorText;
+                    return;
+
+                case AgendaUiScreen::EditorText:
+                    screen_ =
+                        AgendaUiScreen::EditorReview;
+                    return;
+
+                default:
+                    return;
+            }
+        }
+
+        if (
+            action.type ==
+            AgendaUiActionType::EditorBack
+        )
+        {
+            switch (screen_)
+            {
+                case AgendaUiScreen::EditorReview:
+                    screen_ =
+                        AgendaUiScreen::EditorText;
+                    return;
+
+                case AgendaUiScreen::EditorText:
+                    screen_ =
+                        AgendaUiScreen::EditorTime;
+                    return;
+
+                case AgendaUiScreen::EditorTime:
+                    screen_ =
+                        AgendaUiScreen::EditorDate;
+                    return;
+
+                default:
+                    return;
+            }
+        }
+
+        return;
+    }
+
+    if (
+        screen_ ==
+        AgendaUiScreen::ClockSetup
+    )
+    {
+        switch (action.type)
+        {
+            case AgendaUiActionType::
+                ClockPreviousDay:
+                moveToPreviousDate(
+                    clockDraft_.date
+                );
+                return;
+
+            case AgendaUiActionType::
+                ClockNextDay:
+                moveToNextDate(
+                    clockDraft_.date
+                );
+                return;
+
+            case AgendaUiActionType::
+                ClockPreviousHour:
+                clockDraft_.time.hour =
+                    (
+                        clockDraft_.time.hour +
+                        23
+                    ) % 24;
+                return;
+
+            case AgendaUiActionType::
+                ClockNextHour:
+                clockDraft_.time.hour =
+                    (
+                        clockDraft_.time.hour +
+                        1
+                    ) % 24;
+                return;
+
+            case AgendaUiActionType::
+                ClockPreviousMinute:
+                clockDraft_.time.minute =
+                    (
+                        clockDraft_.time.minute +
+                        59
+                    ) % 60;
+                return;
+
+            case AgendaUiActionType::
+                ClockNextMinute:
+                clockDraft_.time.minute =
+                    (
+                        clockDraft_.time.minute +
+                        1
+                    ) % 60;
+                return;
+
+            case AgendaUiActionType::
+                ConfirmClock:
+                break;
+
+            default:
+                return;
+        }
+
+        if (
+            !isValidDate(clockDraft_.date) ||
+            !isValidTime(clockDraft_.time)
+        )
+        {
+            clockError_ =
+                ClockError::InvalidDateTime;
+            return;
+        }
+
+        const ClockError setError =
+            clock_.set(clockDraft_);
+
+        if (setError != ClockError::None)
+        {
+            clockError_ = setError;
+            return;
+        }
+
+        lastNow_ = clockDraft_;
+
+        displayedMonth_ = YearMonth{
+            clockDraft_.date.year,
+            clockDraft_.date.month
+        };
+
+        clockError_ = ClockError::None;
+        screen_ = AgendaUiScreen::Month;
+        return;
+    }
+
     if (screen_ == AgendaUiScreen::Month)
     {
-        if (
-            action.type ==
-            AgendaUiActionType::PreviousMonth
-        )
+        switch (action.type)
         {
-            const std::optional<YearMonth> previous =
-                previousMonth(displayedMonth_);
-
-            if (previous.has_value())
+            case AgendaUiActionType::
+                PreviousMonth:
             {
-                displayedMonth_ =
-                    previous.value();
+                const std::optional<YearMonth>
+                    previous =
+                        previousMonth(
+                            displayedMonth_
+                        );
+
+                if (previous.has_value())
+                {
+                    displayedMonth_ = *previous;
+                }
+
+                return;
             }
 
-            return;
-        }
-
-        if (
-            action.type ==
-            AgendaUiActionType::NextMonth
-        )
-        {
-            const std::optional<YearMonth> next =
-                nextMonth(displayedMonth_);
-
-            if (next.has_value())
+            case AgendaUiActionType::
+                NextMonth:
             {
-                displayedMonth_ =
-                    next.value();
+                const std::optional<YearMonth>
+                    next =
+                        nextMonth(
+                            displayedMonth_
+                        );
+
+                if (next.has_value())
+                {
+                    displayedMonth_ = *next;
+                }
+
+                return;
             }
 
-            return;
+            case AgendaUiActionType::
+                SelectDate:
+                if (
+                    !action.date.has_value() ||
+                    !isValidDate(*action.date)
+                )
+                {
+                    return;
+                }
+
+                selectedDate_ = *action.date;
+
+                displayedMonth_ = YearMonth{
+                    action.date->year,
+                    action.date->month
+                };
+
+                selectedEventId_.reset();
+                dayPageIndex_ = 0;
+                screen_ = AgendaUiScreen::Day;
+                return;
+
+            default:
+                return;
         }
-
-        if (
-            action.type ==
-                AgendaUiActionType::SelectDate &&
-            action.date.has_value() &&
-            isValidDate(action.date.value())
-        )
-        {
-            const Date selected =
-                action.date.value();
-
-            selectedDate_ = selected;
-
-            displayedMonth_ = YearMonth{
-                selected.year,
-                selected.month
-            };
-
-            selectedEventId_.reset();
-            dayPageIndex_ = 0;
-            screen_ = AgendaUiScreen::Day;
-
-            return;
-        }
-
-        return;
     }
 
-    if (
-        screen_ == AgendaUiScreen::Day &&
-        action.type ==
+    if (screen_ == AgendaUiScreen::Day)
+    {
+        if (
+            action.type ==
+            AgendaUiActionType::StartCreate
+        )
+        {
+            beginCreate();
+            return;
+        }
+
+        if (
+            action.type ==
             AgendaUiActionType::PreviousDayPage
-    )
-    {
-        clampDayPage();
-
-        if (dayPageIndex_ > 0)
-        {
-            --dayPageIndex_;
-        }
-
-        return;
-    }
-
-    if (
-        screen_ == AgendaUiScreen::Day &&
-        action.type ==
-            AgendaUiActionType::NextDayPage
-    )
-    {
-        clampDayPage();
-
-        AgendaUiView current;
-        rebuildDayRows(current);
-
-        if (
-            dayPageIndex_ + 1 <
-            current.dayPageCount
         )
         {
-            ++dayPageIndex_;
+            clampDayPage();
+
+            if (dayPageIndex_ > 0)
+            {
+                --dayPageIndex_;
+            }
+
+            return;
         }
 
-        return;
-    }
+        if (
+            action.type ==
+            AgendaUiActionType::NextDayPage
+        )
+        {
+            clampDayPage();
 
-    if (
-        screen_ == AgendaUiScreen::Day &&
-        action.type ==
+            if (!selectedDate_.has_value())
+            {
+                return;
+            }
+
+            const std::size_t count =
+                eventsForDate(
+                    controller_.agenda(),
+                    *selectedDate_
+                ).size();
+
+            const std::size_t pageCount =
+                count == 0
+                    ? 1
+                    : (
+                        count +
+                        AGENDA_UI_EVENTS_PER_PAGE -
+                        1
+                    ) /
+                        AGENDA_UI_EVENTS_PER_PAGE;
+
+            if (
+                dayPageIndex_ + 1 <
+                pageCount
+            )
+            {
+                ++dayPageIndex_;
+            }
+
+            return;
+        }
+
+        if (
+            action.type !=
             AgendaUiActionType::SelectEvent
-    )
-    {
+        )
+        {
+            return;
+        }
+
         if (!action.eventId.has_value())
         {
             return;
@@ -390,7 +745,7 @@ void AgendaUiStateMachine::handle(
 
         const Event* selected =
             controller_.agenda().findEvent(
-                action.eventId.value()
+                *action.eventId
             );
 
         if (
@@ -398,7 +753,7 @@ void AgendaUiStateMachine::handle(
             !selectedDate_.has_value() ||
             !sameDate(
                 selected->eventDate,
-                selectedDate_.value()
+                *selectedDate_
             )
         )
         {
@@ -406,123 +761,9 @@ void AgendaUiStateMachine::handle(
         }
 
         selectedEventId_ = selected->id;
-
-        screen_ =
-            AgendaUiScreen::EventDetails;
-
+        screen_ = AgendaUiScreen::EventDetails;
         return;
     }
-
-    if (
-        screen_ !=
-        AgendaUiScreen::ClockSetup
-    )
-    {
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockPreviousDay
-    )
-    {
-        moveToPreviousDate(
-            clockDraft_.date
-        );
-
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockNextDay
-    )
-    {
-        moveToNextDate(
-            clockDraft_.date
-        );
-
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockPreviousHour
-    )
-    {
-        clockDraft_.time.hour =
-            (clockDraft_.time.hour + 23) % 24;
-
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockNextHour
-    )
-    {
-        clockDraft_.time.hour =
-            (clockDraft_.time.hour + 1) % 24;
-
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockPreviousMinute
-    )
-    {
-        clockDraft_.time.minute =
-            (clockDraft_.time.minute + 59) % 60;
-
-        return;
-    }
-
-    if (
-        action.type ==
-        AgendaUiActionType::ClockNextMinute
-    )
-    {
-        clockDraft_.time.minute =
-            (clockDraft_.time.minute + 1) % 60;
-
-        return;
-    }
-
-    if (
-        action.type !=
-        AgendaUiActionType::ConfirmClock
-    )
-    {
-        return;
-    }
-
-    if (!validDateTime(clockDraft_))
-    {
-        clockError_ =
-            ClockError::InvalidDateTime;
-
-        return;
-    }
-
-    const ClockError setError =
-        clock_.set(clockDraft_);
-
-    if (setError != ClockError::None)
-    {
-        clockError_ = setError;
-        return;
-    }
-
-    lastNow_ = clockDraft_;
-
-    displayedMonth_ = YearMonth{
-        clockDraft_.date.year,
-        clockDraft_.date.month
-    };
-
-    clockError_ = ClockError::None;
-    screen_ = AgendaUiScreen::Month;
 }
 
 AgendaUiView AgendaUiStateMachine::view() const
@@ -531,59 +772,36 @@ AgendaUiView AgendaUiStateMachine::view() const
 
     result.screen = screen_;
     result.overlay = overlay_;
-
-    result.controllerError =
-        controllerError_;
-
+    result.controllerError = controllerError_;
     result.eventError = eventError_;
     result.clockError = clockError_;
-
-    result.displayedMonth =
-        displayedMonth_;
-
-    result.monthPreviousEnabled =
-        previousMonth(
-            displayedMonth_
-        ).has_value();
-
-    result.monthNextEnabled =
-        nextMonth(
-            displayedMonth_
-        ).has_value();
-
+    result.displayedMonth = displayedMonth_;
     result.clockDraft = clockDraft_;
     result.selectedDate = selectedDate_;
-
-    result.dayPageIndex =
-        dayPageIndex_;
-
+    result.dayPageIndex = dayPageIndex_;
     result.editor = editor_;
-
-    result.t9Language =
-        t9_.language();
-
-    result.t9Mode =
-        t9_.mode();
-
+    result.t9Language = t9_.language();
+    result.t9Mode = t9_.mode();
     result.reminder = reminder_;
 
-    if (controller_.isReady())
+    if (!controller_.isReady())
     {
-        rebuildMonthCells(result);
-        rebuildDayRows(result);
+        return result;
+    }
 
-        if (selectedEventId_.has_value())
+    rebuildMonthCells(result);
+    rebuildDayRows(result);
+
+    if (selectedEventId_.has_value())
+    {
+        const Event* selected =
+            controller_.agenda().findEvent(
+                *selectedEventId_
+            );
+
+        if (selected != nullptr)
         {
-            const Event* selected =
-                controller_.agenda().findEvent(
-                    selectedEventId_.value()
-                );
-
-            if (selected != nullptr)
-            {
-                result.selectedEvent =
-                    *selected;
-            }
+            result.selectedEvent = *selected;
         }
     }
 
@@ -594,6 +812,16 @@ void AgendaUiStateMachine::rebuildMonthCells(
     AgendaUiView& result
 ) const
 {
+    result.monthPreviousEnabled =
+        previousMonth(
+            displayedMonth_
+        ).has_value();
+
+    result.monthNextEnabled =
+        nextMonth(
+            displayedMonth_
+        ).has_value();
+
     const MonthGrid grid =
         buildMonthGrid(displayedMonth_);
 
@@ -606,31 +834,28 @@ void AgendaUiStateMachine::rebuildMonthCells(
         AgendaUiMonthCell& target =
             result.monthCells[index];
 
-        target.date =
-            grid[index].date;
+        target.date = grid[index].date;
 
         target.inDisplayedMonth =
             grid[index].inDisplayedMonth;
-
-        target.isToday =
-            target.date.has_value() &&
-            sameDate(
-                target.date.value(),
-                lastNow_.date
-            );
-
-        target.isSelected =
-            target.date.has_value() &&
-            selectedDate_.has_value() &&
-            sameDate(
-                target.date.value(),
-                selectedDate_.value()
-            );
 
         if (!target.date.has_value())
         {
             continue;
         }
+
+        target.isToday =
+            sameDate(
+                *target.date,
+                lastNow_.date
+            );
+
+        target.isSelected =
+            selectedDate_.has_value() &&
+            sameDate(
+                *target.date,
+                *selectedDate_
+            );
 
         for (
             const Event& event :
@@ -640,7 +865,7 @@ void AgendaUiStateMachine::rebuildMonthCells(
             if (
                 sameDate(
                     event.eventDate,
-                    target.date.value()
+                    *target.date
                 )
             )
             {
@@ -666,7 +891,7 @@ void AgendaUiStateMachine::rebuildDayRows(
     const std::vector<const Event*> events =
         eventsForDate(
             controller_.agenda(),
-            selectedDate_.value()
+            *selectedDate_
         );
 
     result.dayPageCount =
@@ -723,17 +948,17 @@ void AgendaUiStateMachine::clampDayPage()
         return;
     }
 
-    const std::size_t eventCount =
+    const std::size_t count =
         eventsForDate(
             controller_.agenda(),
-            selectedDate_.value()
+            *selectedDate_
         ).size();
 
     const std::size_t pageCount =
-        eventCount == 0
+        count == 0
             ? 1
             : (
-                eventCount +
+                count +
                 AGENDA_UI_EVENTS_PER_PAGE -
                 1
             ) /
@@ -741,9 +966,79 @@ void AgendaUiStateMachine::clampDayPage()
 
     if (dayPageIndex_ >= pageCount)
     {
-        dayPageIndex_ =
-            pageCount - 1;
+        dayPageIndex_ = pageCount - 1;
     }
+}
+
+void AgendaUiStateMachine::beginCreate()
+{
+    if (!selectedDate_.has_value())
+    {
+        return;
+    }
+
+    editor_ = AgendaUiEditorDraft{};
+
+    editor_.mode =
+        AgendaUiEditorMode::Create;
+
+    editor_.eventId.reset();
+    editor_.date = *selectedDate_;
+    editor_.time.reset();
+    editor_.text.clear();
+    editor_.dirty = false;
+
+    editorReturnScreen_ =
+        AgendaUiScreen::Day;
+
+    screen_ =
+        AgendaUiScreen::EditorDate;
+}
+
+void AgendaUiStateMachine::beginEdit()
+{
+    if (!selectedEventId_.has_value())
+    {
+        return;
+    }
+
+    const Event* event =
+        controller_.agenda().findEvent(
+            *selectedEventId_
+        );
+
+    if (event == nullptr)
+    {
+        selectedEventId_.reset();
+        screen_ = AgendaUiScreen::Day;
+        return;
+    }
+
+    editor_ = AgendaUiEditorDraft{};
+
+    editor_.mode =
+        AgendaUiEditorMode::Update;
+
+    editor_.eventId = event->id;
+    editor_.date = event->eventDate;
+    editor_.time = event->eventTime;
+    editor_.text = event->text;
+    editor_.dirty = false;
+
+    editorReturnScreen_ =
+        AgendaUiScreen::EventDetails;
+
+    screen_ =
+        AgendaUiScreen::EditorDate;
+}
+
+void AgendaUiStateMachine::
+    leaveEditorAfterDiscard()
+{
+    screen_ = editorReturnScreen_;
+    overlay_ = AgendaUiOverlay::None;
+    editor_ = AgendaUiEditorDraft{};
+    t9_ = T9Engine{};
 }
 
 void AgendaUiStateMachine::resetErrors()

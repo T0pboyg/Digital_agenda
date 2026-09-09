@@ -1754,6 +1754,593 @@ void test_details_views_are_independent_event_copies()
     );
 }
 
+void test_start_create_opens_clean_date_editor()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(
+        view.editor.mode ==
+        AgendaUiEditorMode::Create
+    );
+
+    assert(!view.editor.eventId.has_value());
+
+    assert(view.editor.date.year == 2026);
+    assert(view.editor.date.month == 9);
+    assert(view.editor.date.day == 9);
+
+    assert(!view.editor.time.has_value());
+    assert(view.editor.text.empty());
+    assert(!view.editor.dirty);
+
+    assert(storage.writeCount == 0);
+}
+
+void test_create_editor_navigates_between_steps()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorTime
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorText
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorBack}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorText
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorBack}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorTime
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorBack}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(storage.writeCount == 0);
+}
+
+void test_editor_date_controls_are_bounded_and_mark_dirty()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2099, 12, 31}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNextDay}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(view.editor.date.year == 2099);
+    assert(view.editor.date.month == 12);
+    assert(view.editor.date.day == 31);
+    assert(!view.editor.dirty);
+
+    ui.handle(
+        {AgendaUiActionType::EditorPreviousDay}
+    );
+
+    view = ui.view();
+
+    assert(view.editor.date.year == 2099);
+    assert(view.editor.date.month == 12);
+    assert(view.editor.date.day == 30);
+    assert(view.editor.dirty);
+
+    assert(storage.writeCount == 0);
+}
+
+void test_editor_time_controls_use_five_minute_steps()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorTime
+    );
+
+    assert(!ui.view().editor.time.has_value());
+
+    ui.handle(
+        {AgendaUiActionType::ToggleEventTime}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(view.editor.time.has_value());
+    assert(view.editor.time->hour == 12);
+    assert(view.editor.time->minute == 0);
+    assert(view.editor.dirty);
+
+    ui.handle(
+        {AgendaUiActionType::EditorPreviousMinute}
+    );
+
+    view = ui.view();
+
+    assert(view.editor.time->hour == 11);
+    assert(view.editor.time->minute == 55);
+
+    ui.handle(
+        {AgendaUiActionType::EditorNextMinute}
+    );
+
+    view = ui.view();
+
+    assert(view.editor.time->hour == 12);
+    assert(view.editor.time->minute == 0);
+
+    for (int index = 0; index < 13; ++index)
+    {
+        ui.handle(
+            {AgendaUiActionType::EditorPreviousHour}
+        );
+    }
+
+    view = ui.view();
+
+    assert(view.editor.time->hour == 23);
+    assert(view.editor.time->minute == 0);
+
+    for (int index = 0; index < 11; ++index)
+    {
+        ui.handle(
+            {AgendaUiActionType::EditorNextMinute}
+        );
+    }
+
+    view = ui.view();
+
+    assert(view.editor.time->hour == 23);
+    assert(view.editor.time->minute == 55);
+
+    ui.handle(
+        {AgendaUiActionType::EditorNextMinute}
+    );
+
+    view = ui.view();
+
+    assert(view.editor.time->hour == 0);
+    assert(view.editor.time->minute == 0);
+
+    ui.handle(
+        {AgendaUiActionType::ToggleEventTime}
+    );
+
+    assert(!ui.view().editor.time.has_value());
+    assert(ui.view().editor.dirty);
+    assert(storage.writeCount == 0);
+}
+
+void test_editor_cancel_requires_confirmation_only_when_dirty()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 9});
+
+    // Καθαρό draft: κλείνει αμέσως.
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorCancel}
+    );
+
+    AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    // Τροποποιημένο draft: ζητά επιβεβαίωση.
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorPreviousDay}
+    );
+
+    assert(ui.view().editor.dirty);
+    assert(ui.view().editor.date.day == 8);
+
+    ui.handle(
+        {AgendaUiActionType::EditorCancel}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::ConfirmDiscard
+    );
+
+    // Όσο υπάρχει overlay, ο editor δεν αλλάζει.
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::ConfirmDiscard
+    );
+
+    assert(view.editor.date.day == 8);
+
+    // Ακύρωση της απόρριψης: επιστροφή στον editor.
+    ui.handle(
+        {AgendaUiActionType::CancelDiscard}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(view.editor.date.day == 8);
+    assert(view.editor.dirty);
+
+    // Επιβεβαίωση απόρριψης: επιστροφή στην ημέρα.
+    ui.handle(
+        {AgendaUiActionType::EditorCancel}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ConfirmDiscard}
+    );
+
+    view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(!view.editor.eventId.has_value());
+    assert(!view.editor.time.has_value());
+    assert(view.editor.text.empty());
+    assert(!view.editor.dirty);
+
+    assert(storage.writeCount == 0);
+}
+
+void test_start_edit_copies_event_into_clean_draft()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                Event{
+                    7,
+                    Date{2026, 9, 10},
+                    std::optional<TimeOfDay>{
+                        TimeOfDay{14, 25}
+                    },
+                    "Appointment",
+                    false,
+                    uiTestNow()
+                }
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 10});
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartEdit}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(
+        view.editor.mode ==
+        AgendaUiEditorMode::Update
+    );
+
+    assert(view.editor.eventId.has_value());
+    assert(*view.editor.eventId == 7);
+
+    assert(view.editor.date.year == 2026);
+    assert(view.editor.date.month == 9);
+    assert(view.editor.date.day == 10);
+
+    assert(view.editor.time.has_value());
+    assert(view.editor.time->hour == 14);
+    assert(view.editor.time->minute == 25);
+
+    assert(view.editor.text == "Appointment");
+    assert(!view.editor.dirty);
+    assert(storage.writeCount == 0);
+}
+
+void test_discarded_edit_returns_to_unchanged_details()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                Event{
+                    7,
+                    Date{2026, 9, 10},
+                    std::optional<TimeOfDay>{
+                        TimeOfDay{14, 25}
+                    },
+                    "Appointment",
+                    false,
+                    uiTestNow()
+                }
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    openUiDay(ui, Date{2026, 9, 10});
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartEdit}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNextDay}
+    );
+
+    assert(ui.view().editor.date.day == 11);
+    assert(ui.view().editor.dirty);
+
+    ui.handle(
+        {AgendaUiActionType::EditorCancel}
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::ConfirmDiscard
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ConfirmDiscard}
+    );
+
+    const AgendaUiView view = ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::EventDetails
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(view.selectedEvent.has_value());
+    assert(view.selectedEvent->id == 7);
+    assert(view.selectedEvent->eventDate.day == 10);
+    assert(view.selectedEvent.has_value());
+    assert(view.selectedEvent->id == 7);
+    assert(view.selectedEvent->eventDate.day == 10);
+    assert(view.selectedEvent->eventTime.has_value());
+    assert(view.selectedEvent->eventTime->hour == 14);
+    assert(view.selectedEvent->eventTime->minute == 25);
+    assert(view.selectedEvent->text == "Appointment");
+
+    const Event* stored =
+        controller.agenda().findEvent(7);
+
+    assert(stored != nullptr);
+    assert(stored->eventDate.day == 10);
+    assert(stored->text == "Appointment");
+    assert(storage.writeCount == 0);
+}
+
 int main()
 {
     test_valid_startup_opens_current_month();
@@ -1786,6 +2373,13 @@ int main()
     test_empty_day_has_one_stable_page();
     test_invalid_event_selection_is_ignored();
     test_details_views_are_independent_event_copies();
+    test_start_create_opens_clean_date_editor();
+    test_create_editor_navigates_between_steps();
+    test_editor_date_controls_are_bounded_and_mark_dirty();
+    test_editor_time_controls_use_five_minute_steps();
+    test_editor_cancel_requires_confirmation_only_when_dirty();
+    test_start_edit_copies_event_into_clean_draft();
+    test_discarded_edit_returns_to_unchanged_details();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";
