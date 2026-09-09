@@ -960,6 +960,206 @@ void test_event_details_render_event_or_safe_error()
     );
 }
 
+void test_editor_date_renders_draft_and_navigation()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorDate;
+
+    view.editor.date =
+        Date{2026, 9, 10};
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΗΜΕΡΟΜΗΝΙΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "10/09/2026"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΠΙΣΩ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΕΠΟΜΕΝΟ"
+        )
+    );
+
+    assert(
+        containsText(
+            surface,
+            "ΑΚΥΡΩΣΗ"
+        )
+    );
+}
+
+void test_editor_time_renders_timed_and_all_day_variants()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorTime;
+
+    view.editor.time =
+        TimeOfDay{8, 5};
+
+    RecordingDrawSurface timedSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        timedSurface
+    );
+
+    assert(
+        containsText(
+            timedSurface,
+            "ΩΡΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            timedSurface,
+            "ΜΕ ΩΡΑ"
+        )
+    );
+
+    assert(
+        containsText(
+            timedSurface,
+            "08:05"
+        )
+    );
+
+    view.editor.time.reset();
+
+    RecordingDrawSurface allDaySurface;
+
+    AgendaRenderer{}.render(
+        view,
+        allDaySurface
+    );
+
+    assert(
+        containsText(
+            allDaySurface,
+            "ΟΛΗ ΜΕΡΑ"
+        )
+    );
+
+    assert(
+        !containsText(
+            allDaySurface,
+            "08:05"
+        )
+    );
+}
+
+void test_editor_review_renders_create_and_update_variants()
+{
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorReview;
+
+    view.editor.date =
+        Date{2026, 9, 10};
+
+    view.editor.time =
+        TimeOfDay{8, 5};
+
+    view.editor.text =
+        "Ραντεβού";
+
+    view.editor.mode =
+        AgendaUiEditorMode::Create;
+
+    RecordingDrawSurface createSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        createSurface
+    );
+
+    assert(
+        containsText(
+            createSurface,
+            "ΝΕΟ ΓΕΓΟΝΟΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            createSurface,
+            "10/09/2026"
+        )
+    );
+
+    assert(
+        containsText(
+            createSurface,
+            "08:05"
+        )
+    );
+
+    assert(
+        containsText(
+            createSurface,
+            "Ραντεβού"
+        )
+    );
+
+    assert(
+        containsText(
+            createSurface,
+            "ΑΠΟΘΗΚΕΥΣΗ"
+        )
+    );
+
+    view.editor.mode =
+        AgendaUiEditorMode::Update;
+
+    view.editor.eventId = 7;
+
+    RecordingDrawSurface updateSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        updateSurface
+    );
+
+    assert(
+        containsText(
+            updateSurface,
+            "ΑΛΛΑΓΗ ΓΕΓΟΝΟΤΟΣ"
+        )
+    );
+
+    assert(
+        containsText(
+            updateSurface,
+            "ΑΠΟΘΗΚΕΥΣΗ"
+        )
+    );
+}
+
 int main()
 {
     test_renderer_clears_with_dark_background();
@@ -973,6 +1173,9 @@ int main()
     test_day_renders_three_rows_and_page_state();
     test_day_uses_all_day_label_and_utf8_safe_preview();
     test_event_details_render_event_or_safe_error();
+    test_editor_date_renders_draft_and_navigation();
+    test_editor_time_renders_timed_and_all_day_variants();
+    test_editor_review_renders_create_and_update_variants();
 
     std::cout
         << "All agenda renderer tests passed.\n";

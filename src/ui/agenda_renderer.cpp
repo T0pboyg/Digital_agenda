@@ -647,6 +647,220 @@ void renderEventDetails(
     );
 }
 
+void renderEditorDate(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    surface.drawText(
+        AgendaUiLayout::Header,
+        "ΗΜΕΡΟΜΗΝΙΑ",
+        UiTextStyle::Title,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.fillRoundedRectangle(
+        AgendaUiLayout::EditorValue,
+        10,
+        AgendaUiColors::Surface
+    );
+
+    surface.drawText(
+        AgendaUiLayout::EditorValue,
+        formatDate(
+            view.editor.date
+        ),
+        UiTextStyle::Heading,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "ΠΙΣΩ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterCenter,
+        "ΑΚΥΡΩΣΗ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Error,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterRight,
+        "ΕΠΟΜΕΝΟ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+}
+
+void renderEditorTime(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    surface.drawText(
+        AgendaUiLayout::Header,
+        "ΩΡΑ",
+        UiTextStyle::Title,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.fillRoundedRectangle(
+        AgendaUiLayout::EditorValue,
+        10,
+        AgendaUiColors::Surface
+    );
+
+    const std::string modeText =
+        view.editor.time.has_value()
+        ? "ΜΕ ΩΡΑ"
+        : "ΟΛΗ ΜΕΡΑ";
+
+    surface.drawText(
+        AgendaUiLayout::EditorValue,
+        modeText,
+        UiTextStyle::Heading,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    if (view.editor.time.has_value())
+    {
+        surface.fillRoundedRectangle(
+            AgendaUiLayout::EditorSecondary,
+            10,
+            AgendaUiColors::Surface
+        );
+
+        surface.drawText(
+            AgendaUiLayout::EditorSecondary,
+            formatTime(
+                *view.editor.time
+            ),
+            UiTextStyle::Title,
+            AgendaUiColors::Accent,
+            UiTextAlignment::Center
+        );
+    }
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "ΠΙΣΩ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterCenter,
+        "ΑΚΥΡΩΣΗ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Error,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterRight,
+        "ΕΠΟΜΕΝΟ",
+        UiTextStyle::Caption,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+}
+
+void renderEditorReview(
+    const AgendaUiView& view,
+    DrawSurface& surface
+)
+{
+    const std::string title =
+        view.editor.mode ==
+            AgendaUiEditorMode::Create
+        ? "ΝΕΟ ΓΕΓΟΝΟΣ"
+        : "ΑΛΛΑΓΗ ΓΕΓΟΝΟΤΟΣ";
+
+    surface.drawText(
+        AgendaUiLayout::Header,
+        title,
+        UiTextStyle::Heading,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::Subheader,
+        formatDate(
+            view.editor.date
+        ),
+        UiTextStyle::Body,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    const UiRect timeBounds{
+        28,
+        58,
+        184,
+        26
+    };
+
+    const UiRect textBounds{
+        28,
+        88,
+        184,
+        88
+    };
+
+    const std::string timeText =
+        view.editor.time.has_value()
+        ? formatTime(*view.editor.time)
+        : "ΟΛΗ ΜΕΡΑ";
+
+    surface.drawText(
+        timeBounds,
+        timeText,
+        UiTextStyle::Heading,
+        AgendaUiColors::Accent,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        textBounds,
+        utf8Prefix(
+            view.editor.text,
+            64
+        ),
+        UiTextStyle::Body,
+        AgendaUiColors::PrimaryText,
+        UiTextAlignment::Center
+    );
+
+    surface.drawText(
+        AgendaUiLayout::FooterLeft,
+        "ΠΙΣΩ",
+        UiTextStyle::Caption,
+        AgendaUiColors::SecondaryText,
+        UiTextAlignment::Center
+    );
+
+    drawButton(
+        surface,
+        AgendaUiLayout::FooterRight,
+        "ΑΠΟΘΗΚΕΥΣΗ",
+        AgendaUiColors::Accent,
+        AgendaUiColors::Background
+    );
+}
+
 void renderSafeFallback(
     DrawSurface& surface
 )
@@ -695,6 +909,27 @@ void AgendaRenderer::render(
 
     case AgendaUiScreen::EventDetails:
         renderEventDetails(
+            view,
+            surface
+        );
+        break;
+
+    case AgendaUiScreen::EditorDate:
+        renderEditorDate(
+            view,
+            surface
+        );
+        break;
+
+    case AgendaUiScreen::EditorTime:
+        renderEditorTime(
+            view,
+            surface
+        );
+        break;
+
+    case AgendaUiScreen::EditorReview:
+        renderEditorReview(
             view,
             surface
         );
