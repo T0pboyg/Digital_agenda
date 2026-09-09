@@ -3447,6 +3447,542 @@ void test_stale_details_selection_returns_to_day()
     assert(!view.selectedEvent.has_value());
 }
 
+Event uiDueEvent(
+    std::uint32_t id,
+    const std::string& text
+)
+{
+    return Event{
+        id,
+        Date{2026, 9, 8},
+        std::nullopt,
+        text,
+        false,
+        DateTime{
+            Date{2026, 9, 1},
+            TimeOfDay{9, 0}
+        }
+    };
+}
+
+DateTime uiReminderNow()
+{
+    return DateTime{
+        Date{2026, 9, 7},
+        TimeOfDay{17, 0}
+    };
+}
+
+void test_tick_shows_owned_due_reminder_on_month()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {uiDueEvent(1, "Original")},
+            2
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    ui.tick();
+
+    const AgendaUiView before =
+        ui.view();
+
+    assert(
+        before.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(
+        before.overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    assert(before.reminder.has_value());
+    assert(before.reminder->id == 1);
+    assert(before.reminder->text == "Original");
+    assert(storage.writeCount == 0);
+
+    const AgendaControllerChangeResult updated =
+        controller.updateEvent(
+            1,
+            EventDraft{
+                Date{2026, 9, 8},
+                std::nullopt,
+                "Changed"
+            },
+            uiReminderNow()
+        );
+
+    assert(
+        updated.error ==
+        AgendaControllerError::None
+    );
+
+    assert(
+        before.reminder->text ==
+        "Original"
+    );
+}
+
+void test_reminder_is_deferred_by_editor_and_blocking_overlay()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiDueEvent(1, "Due"),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 9},
+                    "Selected"
+                )
+            },
+            3
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.tick();
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorDate
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorCancel}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    ui.handle(
+        {
+            AgendaUiActionType::
+                AcknowledgeReminder
+        }
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            2
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::ConfirmDelete
+    );
+
+    ui.tick();
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::ConfirmDelete
+    );
+}
+
+void test_acknowledgement_persists_and_advances_one_at_a_time()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiDueEvent(1, "First"),
+                uiDueEvent(2, "Second")
+            },
+            3
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+    ui.tick();
+
+    assert(
+        ui.view().reminder.has_value()
+    );
+
+    assert(
+        ui.view().reminder->id == 1
+    );
+
+    ui.handle(
+        {
+            AgendaUiActionType::
+                AcknowledgeReminder
+        }
+    );
+
+    assert(
+        controller.agenda()
+            .findEvent(1)
+            ->reminderSeen
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    assert(
+        ui.view().reminder.has_value()
+    );
+
+    assert(
+        ui.view().reminder->id == 2
+    );
+
+    ui.handle(
+        {
+            AgendaUiActionType::
+                AcknowledgeReminder
+        }
+    );
+
+    assert(
+        controller.agenda()
+            .findEvent(2)
+            ->reminderSeen
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        !ui.view().reminder.has_value()
+    );
+}
+
+void test_acknowledgement_and_clock_failures_are_retryable()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {uiDueEvent(7, "Retry")},
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    clock.readResult.error =
+        ClockError::ReadFailed;
+
+    ui.tick();
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        ui.view().clockError ==
+        ClockError::ReadFailed
+    );
+
+    clock.readResult = ClockReadResult{
+        ClockError::None,
+        uiReminderNow()
+    };
+
+    ui.tick();
+
+    assert(
+        ui.view().reminder.has_value()
+    );
+
+    assert(
+        ui.view().reminder->id == 7
+    );
+
+    storage.writeError =
+        ByteStorageError::WriteFailed;
+
+    ui.handle(
+        {
+            AgendaUiActionType::
+                AcknowledgeReminder
+        }
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    assert(
+        ui.view().reminder.has_value()
+    );
+
+    assert(
+        ui.view().reminder->id == 7
+    );
+
+    assert(
+        !controller.agenda()
+            .findEvent(7)
+            ->reminderSeen
+    );
+
+    assert(
+        ui.view().controllerError ==
+        AgendaControllerError::WriteFailed
+    );
+
+    storage.writeError =
+        ByteStorageError::None;
+
+    ui.handle(
+        {
+            AgendaUiActionType::
+                AcknowledgeReminder
+        }
+    );
+
+    assert(
+        ui.view().overlay ==
+        AgendaUiOverlay::None
+    );
+
+    assert(
+        controller.agenda()
+            .findEvent(7)
+            ->reminderSeen
+    );
+}
+
+void test_successful_save_shows_deferred_reminder()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {uiDueEvent(1, "Due after save")},
+            2
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    enterEnglishA(ui);
+
+    ui.handle(
+        {AgendaUiActionType::SaveEditor}
+    );
+
+    const AgendaUiView view =
+        ui.view();
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    assert(view.reminder.has_value());
+    assert(view.reminder->id == 1);
+    assert(view.reminder->text == "Due after save");
+}
+
+void test_successful_delete_shows_deferred_reminder()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    clock.readResult.value =
+        uiReminderNow();
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiDueEvent(
+                    1,
+                    "Due after delete"
+                ),
+                uiStoredEvent(
+                    2,
+                    Date{2026, 9, 9},
+                    "Delete me"
+                )
+            },
+            3
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            2
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::RequestDelete}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ConfirmDelete}
+    );
+
+    const AgendaUiView view =
+        ui.view();
+
+    assert(
+        controller.agenda().findEvent(2) ==
+        nullptr
+    );
+
+    assert(
+        view.screen ==
+        AgendaUiScreen::Day
+    );
+
+    assert(
+        view.overlay ==
+        AgendaUiOverlay::Reminder
+    );
+
+    assert(view.reminder.has_value());
+    assert(view.reminder->id == 1);
+    assert(
+        view.reminder->text ==
+        "Due after delete"
+    );
+}
+
 
 int main()
 {
@@ -3498,6 +4034,12 @@ int main()
     test_confirmed_delete_is_transactional_and_clamps_page();
     test_delete_failure_retries_same_event();
     test_stale_details_selection_returns_to_day();
+    test_tick_shows_owned_due_reminder_on_month();
+    test_reminder_is_deferred_by_editor_and_blocking_overlay();
+    test_acknowledgement_persists_and_advances_one_at_a_time();
+    test_acknowledgement_and_clock_failures_are_retryable();
+    test_successful_save_shows_deferred_reminder();
+    test_successful_delete_shows_deferred_reminder();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";
