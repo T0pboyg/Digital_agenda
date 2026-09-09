@@ -25,6 +25,7 @@ public:
 
     T9Language language() const;
     T9Mode mode() const;
+    bool uppercase() const;
 
     void setText(const std::string& newText);
 

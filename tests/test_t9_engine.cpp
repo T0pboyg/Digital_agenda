@@ -268,6 +268,19 @@ void test_rejects_new_character_above_500_character_limit()
     assert(input.text() == original);
 }
 
+void test_case_accessor_tracks_toggle()
+{
+    T9Engine engine;
+
+    assert(!engine.uppercase());
+
+    engine.toggleCase();
+    assert(engine.uppercase());
+
+    engine.toggleCase();
+    assert(!engine.uppercase());
+}
+
 int main()
 {
     test_starts_in_english_letters_mode();
@@ -288,6 +301,7 @@ int main()
     test_backspace_clears_pending_state();
     test_accepts_character_at_500_character_boundary();
     test_rejects_new_character_above_500_character_limit();
+    test_case_accessor_tracks_toggle();
 
     std::cout << "All T9 engine tests passed.\n";
 

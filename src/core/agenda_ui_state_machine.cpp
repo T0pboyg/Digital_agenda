@@ -277,6 +277,7 @@ void AgendaUiStateMachine::handle(
             return;
         }
     }
+
     if (
         screen_ ==
             AgendaUiScreen::EventDetails &&
@@ -448,6 +449,57 @@ void AgendaUiStateMachine::handle(
         }
 
         if (
+            screen_ ==
+            AgendaUiScreen::EditorText
+        )
+        {
+            switch (action.type)
+            {
+                case AgendaUiActionType::T9Digit:
+                    if (
+                        t9_.pressDigit(
+                            action.digit,
+                            action.timestampMilliseconds
+                        )
+                    )
+                    {
+                        editor_.text = t9_.text();
+                        editor_.dirty = true;
+                    }
+
+                    return;
+
+                case AgendaUiActionType::
+                    ToggleT9Language:
+                    t9_.toggleLanguage();
+                    return;
+
+                case AgendaUiActionType::
+                    ToggleT9Mode:
+                    t9_.toggleMode();
+                    return;
+
+                case AgendaUiActionType::
+                    ToggleT9Case:
+                    t9_.toggleCase();
+                    return;
+
+                case AgendaUiActionType::
+                    T9Backspace:
+                    if (t9_.backspace())
+                    {
+                        editor_.text = t9_.text();
+                        editor_.dirty = true;
+                    }
+
+                    return;
+
+                default:
+                    break;
+            }
+        }
+
+        if (
             action.type ==
             AgendaUiActionType::EditorNext
         )
@@ -465,6 +517,9 @@ void AgendaUiStateMachine::handle(
                     return;
 
                 case AgendaUiScreen::EditorText:
+                    t9_.commitPending();
+                    editor_.text = t9_.text();
+
                     screen_ =
                         AgendaUiScreen::EditorReview;
                     return;
@@ -678,7 +733,8 @@ void AgendaUiStateMachine::handle(
 
         if (
             action.type ==
-            AgendaUiActionType::PreviousDayPage
+            AgendaUiActionType::
+                PreviousDayPage
         )
         {
             clampDayPage();
@@ -782,6 +838,7 @@ AgendaUiView AgendaUiStateMachine::view() const
     result.editor = editor_;
     result.t9Language = t9_.language();
     result.t9Mode = t9_.mode();
+    result.t9Uppercase = t9_.uppercase();
     result.reminder = reminder_;
 
     if (!controller_.isReady())
@@ -987,6 +1044,9 @@ void AgendaUiStateMachine::beginCreate()
     editor_.time.reset();
     editor_.text.clear();
     editor_.dirty = false;
+    t9_ = T9Engine{};
+    t9_.toggleLanguage();
+    t9_.setText(editor_.text);
 
     editorReturnScreen_ =
         AgendaUiScreen::Day;
@@ -1024,6 +1084,9 @@ void AgendaUiStateMachine::beginEdit()
     editor_.time = event->eventTime;
     editor_.text = event->text;
     editor_.dirty = false;
+    t9_ = T9Engine{};
+    t9_.toggleLanguage();
+    t9_.setText(editor_.text);
 
     editorReturnScreen_ =
         AgendaUiScreen::EventDetails;

@@ -160,6 +160,11 @@ T9Mode T9Engine::mode() const
     return mode_;
 }
 
+bool T9Engine::uppercase() const
+{
+    return uppercase_;
+}
+
 void T9Engine::setText(const std::string& newText)
 {
     text_ = newText;

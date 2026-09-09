@@ -2341,6 +2341,263 @@ void test_discarded_edit_returns_to_unchanged_details()
     assert(storage.writeCount == 0);
 }
 
+
+void openCreateTextEditor(
+    AgendaUiStateMachine& ui,
+    const Date& date
+)
+{
+    openUiDay(ui, date);
+
+    ui.handle(
+        {AgendaUiActionType::StartCreate}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorText
+    );
+}
+
+void test_t9_editor_handles_modes_cycles_and_backspace()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    openCreateTextEditor(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    assert(
+        ui.view().t9Language ==
+        T9Language::Greek
+    );
+
+    assert(
+        ui.view().t9Mode ==
+        T9Mode::Letters
+    );
+
+    assert(!ui.view().t9Uppercase);
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            100
+        }
+    );
+
+    assert(ui.view().editor.text == u8"α");
+    assert(ui.view().editor.dirty);
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            500
+        }
+    );
+
+    assert(ui.view().editor.text == u8"ά");
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            1500
+        }
+    );
+
+    assert(ui.view().editor.text == u8"άα");
+
+    ui.handle(
+        {AgendaUiActionType::ToggleT9Case}
+    );
+
+    assert(ui.view().t9Uppercase);
+
+    ui.handle(
+        {AgendaUiActionType::ToggleT9Language}
+    );
+
+    assert(
+        ui.view().t9Language ==
+        T9Language::English
+    );
+
+    ui.handle(
+        {AgendaUiActionType::ToggleT9Mode}
+    );
+
+    assert(
+        ui.view().t9Mode ==
+        T9Mode::Numbers
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '5',
+            1600
+        }
+    );
+
+    assert(ui.view().editor.text == u8"άα5");
+
+    ui.handle(
+        {AgendaUiActionType::ToggleT9Mode}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '0',
+            1700
+        }
+    );
+
+    assert(ui.view().editor.text == u8"άα5 ");
+
+    ui.handle(
+        {AgendaUiActionType::T9Backspace}
+    );
+
+    assert(ui.view().editor.text == u8"άα5");
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::EditorReview
+    );
+
+    assert(ui.view().editor.text == u8"άα5");
+}
+
+void test_t9_limit_and_screen_guard_preserve_text()
+{
+    UiTestStorage storage;
+    UiTestClock clock;
+
+    const std::string fullText(500, 'x');
+
+    storeUiState(
+        storage,
+        AgendaState{
+            {
+                uiStoredEvent(
+                    7,
+                    Date{2026, 9, 9},
+                    fullText
+                )
+            },
+            8
+        }
+    );
+
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    AgendaUiStateMachine ui(
+        controller,
+        clock,
+        uiTestNow()
+    );
+
+    ui.start();
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            100
+        }
+    );
+
+    assert(
+        ui.view().screen ==
+        AgendaUiScreen::Month
+    );
+
+    assert(ui.view().editor.text.empty());
+
+    openUiDay(
+        ui,
+        Date{2026, 9, 9}
+    );
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::SelectEvent,
+            std::nullopt,
+            7
+        }
+    );
+
+    ui.handle(
+        {AgendaUiActionType::StartEdit}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    ui.handle(
+        {AgendaUiActionType::EditorNext}
+    );
+
+    assert(ui.view().editor.text == fullText);
+    assert(!ui.view().editor.dirty);
+
+    ui.handle(
+        AgendaUiAction{
+            AgendaUiActionType::T9Digit,
+            std::nullopt,
+            std::nullopt,
+            '2',
+            200
+        }
+    );
+
+    assert(ui.view().editor.text == fullText);
+    assert(!ui.view().editor.dirty);
+}
+
 int main()
 {
     test_valid_startup_opens_current_month();
@@ -2380,6 +2637,8 @@ int main()
     test_editor_cancel_requires_confirmation_only_when_dirty();
     test_start_edit_copies_event_into_clean_draft();
     test_discarded_edit_returns_to_unchanged_details();
+    test_t9_editor_handles_modes_cycles_and_backspace();
+    test_t9_limit_and_screen_guard_preserve_text();
 
     std::cout
         << "All agenda UI state machine tests passed.\n";
