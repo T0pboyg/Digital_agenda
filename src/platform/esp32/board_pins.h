@@ -12,6 +12,10 @@ constexpr std::int8_t LcdMosi = 11;
 constexpr std::int8_t LcdMiso = 12;
 constexpr std::int8_t LcdReset = 14;
 
+constexpr std::int8_t TouchSda = 6;
+constexpr std::int8_t TouchScl = 7;
+constexpr std::int8_t TouchReset = 13;
+
 constexpr std::int16_t DisplayWidth = 240;
 constexpr std::int16_t DisplayHeight = 240;
 constexpr std::uint8_t DisplayRotation = 0;
