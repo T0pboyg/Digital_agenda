@@ -1,7 +1,7 @@
 # ESP32 Full Agenda Integration Design
 
 **Date:** 2026-09-10  
-**Status:** Approved design  
+**Status:** Approved design, amended after renderer/touch alignment review<br>
 **Target:** Waveshare ESP32-S3-Touch-LCD-1.28, Arduino framework, PlatformIO
 
 ## 1. Purpose
@@ -21,7 +21,8 @@ platform adapters.
 
 - Operation is fully offline after flashing; Wi-Fi is not required.
 - The calendar uses a classic month grid with Monday as the first weekday.
-- The user navigates with visible arrow controls; swipe gestures are excluded.
+- The user navigates with visible controls; swipe gestures and hidden touch
+  zones are excluded.
 - Selecting a calendar cell selects that cell's date, including the intended
   date change when navigating to another month.
 - A day can contain all-day events and events with a specific time.
@@ -88,7 +89,41 @@ Responsibilities:
 
 `AgendaRenderer` remains platform-independent and is not rewritten.
 
-### 4.2 AgendaTouchMapper
+### 4.2 Shared UI Geometry and Visible Controls
+
+`src/ui/ui_geometry.h` is the single source of truth for the bounds of every
+interactive UI element. Both `AgendaRenderer` and `AgendaTouchMapper` use the
+same named `UiRect` constants or geometry helpers. Neither component may keep
+a separate copy of button, cell, row, keypad, or overlay coordinates.
+
+The existing renderer is extended before touch mapping so every supported
+state-machine action has a visible control:
+
+- `ClockSetup` shows previous/next-day controls, separate hour up/down and
+  minute up/down controls, and confirmation. Hours and minutes change by one,
+  matching the existing state-machine actions.
+- `Month` retains visible previous/next-month arrows and the 42 selectable
+  calendar cells.
+- `Day` adds always-visible Back and Create controls in the header, while event
+  rows and page arrows retain their existing roles.
+- `EventDetails` retains visible Back, Edit, and Delete controls.
+- `EditorDate` adds visible previous/next-day controls and retains Back,
+  Cancel, and Next.
+- `EditorTime` adds a visible timed/all-day toggle plus separate hour and
+  minute up/down controls, and retains Back, Cancel, and Next.
+- `EditorText` makes the language, letters/numbers mode, and case indicators
+  visibly tappable. Digit keys `0` through `9` remain T9 input, `*` is
+  Backspace, and `#` toggles case. The visible case indicator may also trigger
+  the same case action. Back, Cancel, and Next are all visible.
+- `EditorReview` shows Back, Cancel, and Save.
+- Every overlay button uses named shared geometry and remains visually above
+  the inactive screen underneath it.
+
+This amendment deliberately avoids introducing selection modes, long presses,
+or gestures. A release can only produce an action when its point lies inside a
+currently visible, enabled control.
+
+### 4.3 AgendaTouchMapper
 
 `AgendaTouchMapper` is a platform-independent UI component. It receives the
 current `AgendaUiView`, a valid release point, and the action timestamp. It
@@ -98,11 +133,11 @@ Responsibilities:
 
 - Give an active overlay priority over the screen underneath it.
 - Map the 42 month cells to `SelectDate` with the cell's actual date.
-- Map month and day pagination arrows.
-- Map event rows and footer actions.
-- Map clock-setup and editor increment/decrement controls.
-- Map all T9 digits and language, mode, case, backspace, save, and cancel
-  controls.
+- Map month navigation, day pagination, Back, Create, event rows, and event
+  detail actions through shared geometry.
+- Map the visible clock-setup and editor increment/decrement controls.
+- Map T9 digits, the language/mode/case indicators, `*` Backspace, `#` case
+  toggle, and the editor navigation, save, and cancel controls.
 - Populate `timestampMilliseconds` for T9 actions.
 - Return no action for disabled controls, empty event rows, empty calendar
   cells, gaps between controls, or points outside the display.
@@ -110,7 +145,7 @@ Responsibilities:
 The mapper performs no state mutation. Only `AgendaUiStateMachine::handle()`
 changes application state.
 
-### 4.3 Touch Sampling Policy
+### 4.4 Touch Sampling Policy
 
 `TouchHardware` continues to expose hardware samples. The ESP32 loop tracks the
 press lifecycle and sends one point to `AgendaTouchMapper` only on release.
@@ -122,7 +157,7 @@ press lifecycle and sends one point to `AgendaTouchMapper` only on release.
 - No blocking wait is used for a complete gesture; the main loop continues to
   service clock and reminder ticks.
 
-### 4.4 Esp32Clock
+### 4.5 Esp32Clock
 
 `Esp32Clock` implements the existing `Clock` interface.
 
@@ -130,7 +165,7 @@ press lifecycle and sends one point to `AgendaTouchMapper` only on release.
 - The state machine displays `ClockSetup` until the user confirms a valid date
   and time.
 - Confirmation records a base `DateTime` and the current monotonic ESP32 timer.
-- `now()` adds monotonic elapsed time to that base through the existing
+- `read()` adds monotonic elapsed time to that base through the existing
   date/time arithmetic.
 - The elapsed-time source uses a 64-bit monotonic value so normal operation is
   not affected by the 32-bit `millis()` wrap interval.
@@ -144,7 +179,7 @@ unpowered. The clock value therefore is not restored as authoritative time.
 Because the core depends only on `Clock`, a future external RTC can replace
 `Esp32Clock` without changing agenda logic.
 
-### 4.5 LittleFsByteStorage
+### 4.6 LittleFsByteStorage
 
 `LittleFsByteStorage` implements the existing `ByteStorage` contract on the
 internal 16 MB Flash.
@@ -227,6 +262,12 @@ Modified files:
 
 - `platformio.ini`: compile the required root, core, UI, and ESP32 sources; add
   U8g2; select LittleFS.
+- `src/ui/ui_geometry.h`: define the named shared bounds and geometry helpers
+  for every visible interactive control.
+- `src/ui/agenda_renderer.cpp`: render the missing visible controls by using
+  the shared geometry.
+- `tests/test_agenda_renderer.cpp`: verify that every supported action has a
+  visible control and that the renderer uses the expected bounds.
 - `src/platform/esp32/main.cpp`: replace the touch smoke test with the
   composition root and non-blocking application loop.
 
@@ -242,14 +283,22 @@ designed and approved separately.
 All existing tests must continue to pass. New mapper tests cover:
 
 - every screen's active controls;
+- exact boundary agreement between the renderer's visible controls and the
+  mapper's hit areas;
 - all overlay priorities and actions;
 - 42 calendar-cell hit areas and actual dates;
 - enabled and disabled pagination controls;
 - event-row selection;
 - editor controls;
-- all T9 keys and timestamps;
+- T9 digits, language/mode/case indicators, `*` Backspace, `#` case toggle,
+  and timestamps;
 - gaps, boundaries, empty cells, and out-of-range points;
 - exactly one action for one completed touch.
+
+Renderer tests are extended first to cover the newly visible clock, Day,
+EditorDate, EditorTime, EditorText, EditorReview, and overlay controls. These
+tests prevent a future mapper action from becoming reachable through an
+invisible region.
 
 RGB565 conversion and alignment calculations are kept independent from Arduino
 calls and covered by desktop tests. The existing date/time arithmetic tests
@@ -282,14 +331,17 @@ The physical-device checklist covers:
 
 ## 9. Implementation Order
 
-1. Add failing desktop tests for `AgendaTouchMapper`, then implement it.
-2. Add `ArduinoGfxSurface`; build and run a device smoke screen containing
+1. Add failing renderer tests for all missing visible controls, then extend the
+   shared geometry and `AgendaRenderer` until those tests pass.
+2. Add failing desktop tests for `AgendaTouchMapper`, then implement it using
+   only the shared geometry.
+3. Add `ArduinoGfxSurface`; build and run a device smoke screen containing
    Greek, English, and numbers.
-3. Add `Esp32Clock`; verify `ClockSetup` and elapsed time.
-4. Add `LittleFsByteStorage`; verify write, restart, load, and backup recovery.
-5. Replace the ESP32 touch-test `main.cpp` with the complete composition root.
-6. Run the entire desktop suite and PlatformIO build.
-7. Execute the physical-device acceptance checklist.
+4. Add `Esp32Clock`; verify `ClockSetup` and elapsed time.
+5. Add `LittleFsByteStorage`; verify write, restart, load, and backup recovery.
+6. Replace the ESP32 touch-test `main.cpp` with the complete composition root.
+7. Run the entire desktop suite and PlatformIO build.
+8. Execute the physical-device acceptance checklist.
 
 Each stage is completed and verified before the next stage begins.
 
@@ -299,6 +351,8 @@ The milestone is complete when:
 
 - the complete agenda UI is usable only through the physical round touch
   display;
+- every actionable touch target is visibly rendered and shares its exact
+  geometry with the touch mapper;
 - Greek/English/numeric T9 input and UTF-8 rendering work correctly;
 - timed and all-day events can be created, viewed, edited, and deleted;
 - saved events and reminder acknowledgements survive restart;
