@@ -140,6 +140,20 @@ constexpr UiRect Header{
     28
 };
 
+constexpr UiRect MonthPrevious{
+    20,
+    8,
+    28,
+    28
+};
+
+constexpr UiRect MonthNext{
+    192,
+    8,
+    28,
+    28
+};
+
 constexpr UiRect Subheader{
     24,
     36,
@@ -234,6 +248,90 @@ constexpr UiRect EditorSecondary{
     60
 };
 
+constexpr UiRect EditorTimedMode{
+    28,
+    58,
+    88,
+    32
+};
+
+constexpr UiRect EditorAllDayMode{
+    124,
+    58,
+    88,
+    32
+};
+
+constexpr UiRect EditorHourUp{
+    42,
+    110,
+    56,
+    18
+};
+
+constexpr UiRect EditorHourDown{
+    42,
+    158,
+    56,
+    18
+};
+
+constexpr UiRect EditorMinuteUp{
+    142,
+    110,
+    56,
+    18
+};
+
+constexpr UiRect EditorMinuteDown{
+    142,
+    158,
+    56,
+    18
+};
+
+constexpr UiRect ClockDatePrevious{
+    20,
+    67,
+    28,
+    34
+};
+
+constexpr UiRect ClockDateNext{
+    192,
+    67,
+    28,
+    34
+};
+
+constexpr UiRect ClockHourUp{
+    42,
+    116,
+    56,
+    18
+};
+
+constexpr UiRect ClockHourDown{
+    42,
+    158,
+    56,
+    18
+};
+
+constexpr UiRect ClockMinuteUp{
+    142,
+    116,
+    56,
+    18
+};
+
+constexpr UiRect ClockMinuteDown{
+    142,
+    158,
+    56,
+    18
+};
+
 constexpr UiRect T9Preview{
     34,
     34,
@@ -246,6 +344,48 @@ constexpr UiRect T9Status{
     76,
     164,
     16
+};
+
+constexpr UiRect DayBack{
+    20,
+    8,
+    28,
+    28
+};
+
+constexpr UiRect DayHeader{
+    52,
+    8,
+    136,
+    28
+};
+
+constexpr UiRect DayCreate{
+    192,
+    8,
+    28,
+    28
+};
+
+constexpr UiRect EditorDatePrevious{
+    20,
+    67,
+    28,
+    34
+};
+
+constexpr UiRect EditorDateValue{
+    58,
+    58,
+    124,
+    52
+};
+
+constexpr UiRect EditorDateNext{
+    192,
+    67,
+    28,
+    34
 };
 
 constexpr int T9GridX = 45;

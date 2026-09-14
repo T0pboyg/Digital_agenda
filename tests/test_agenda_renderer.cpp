@@ -49,15 +49,13 @@ struct DrawCommand
     std::string text;
 };
 
-class RecordingDrawSurface final :
-    public DrawSurface
+class RecordingDrawSurface final : public DrawSurface
 {
 public:
     std::vector<DrawCommand> commands;
 
     void clear(
-        UiColor color
-    ) override
+        UiColor color) override
     {
         DrawCommand command;
 
@@ -70,39 +68,34 @@ public:
     }
 
     void fillRectangle(
-        const UiRect& bounds,
-        UiColor color
-    ) override
+        const UiRect &bounds,
+        UiColor color) override
     {
         recordRectangle(
             DrawCommandType::FillRectangle,
             bounds,
             0,
             0,
-            color
-        );
+            color);
     }
 
     void drawRectangle(
-        const UiRect& bounds,
+        const UiRect &bounds,
         UiColor color,
-        int thickness
-    ) override
+        int thickness) override
     {
         recordRectangle(
             DrawCommandType::DrawRectangle,
             bounds,
             0,
             thickness,
-            color
-        );
+            color);
     }
 
     void fillRoundedRectangle(
-        const UiRect& bounds,
+        const UiRect &bounds,
         int radius,
-        UiColor color
-    ) override
+        UiColor color) override
     {
         recordRectangle(
             DrawCommandType::
@@ -110,16 +103,14 @@ public:
             bounds,
             radius,
             0,
-            color
-        );
+            color);
     }
 
     void drawRoundedRectangle(
-        const UiRect& bounds,
+        const UiRect &bounds,
         int radius,
         UiColor color,
-        int thickness
-    ) override
+        int thickness) override
     {
         recordRectangle(
             DrawCommandType::
@@ -127,47 +118,41 @@ public:
             bounds,
             radius,
             thickness,
-            color
-        );
+            color);
     }
 
     void fillCircle(
         UiPoint center,
         int radius,
-        UiColor color
-    ) override
+        UiColor color) override
     {
         recordCircle(
             DrawCommandType::FillCircle,
             center,
             radius,
             0,
-            color
-        );
+            color);
     }
 
     void drawCircle(
         UiPoint center,
         int radius,
         UiColor color,
-        int thickness
-    ) override
+        int thickness) override
     {
         recordCircle(
             DrawCommandType::DrawCircle,
             center,
             radius,
             thickness,
-            color
-        );
+            color);
     }
 
     void drawLine(
         UiPoint start,
         UiPoint end,
         UiColor color,
-        int thickness
-    ) override
+        int thickness) override
     {
         DrawCommand command;
 
@@ -183,12 +168,11 @@ public:
     }
 
     void drawText(
-        const UiRect& bounds,
+        const UiRect &bounds,
         std::string_view text,
         UiTextStyle style,
         UiColor color,
-        UiTextAlignment alignment
-    ) override
+        UiTextAlignment alignment) override
     {
         DrawCommand command;
 
@@ -207,11 +191,10 @@ public:
 private:
     void recordRectangle(
         DrawCommandType type,
-        const UiRect& bounds,
+        const UiRect &bounds,
         int radius,
         int thickness,
-        UiColor color
-    )
+        UiColor color)
     {
         DrawCommand command;
 
@@ -229,8 +212,7 @@ private:
         UiPoint center,
         int radius,
         int thickness,
-        UiColor color
-    )
+        UiColor color)
     {
         DrawCommand command;
 
@@ -245,49 +227,72 @@ private:
 };
 
 bool containsText(
-    const RecordingDrawSurface& surface,
-    std::string_view expected
-)
+    const RecordingDrawSurface &surface,
+    std::string_view expected)
 {
     return std::any_of(
         surface.commands.begin(),
         surface.commands.end(),
         [expected](
-            const DrawCommand& command
-        )
+            const DrawCommand &command)
         {
-            return
-                command.type ==
-                    DrawCommandType::DrawText &&
-                command.text == expected;
-        }
-    );
+            return command.type ==
+                       DrawCommandType::DrawText &&
+                   command.text == expected;
+        });
 }
 
-const DrawCommand* findTextCommand(
-    const RecordingDrawSurface& surface,
-    std::string_view expected
-)
+bool hasButton(
+    const RecordingDrawSurface &surface,
+    const UiRect &bounds,
+    std::string_view label)
+{
+    const bool hasBackground =
+        std::any_of(
+            surface.commands.begin(),
+            surface.commands.end(),
+            [&](const DrawCommand &command)
+            {
+                return command.type ==
+                           DrawCommandType::
+                               FillRoundedRectangle &&
+                       command.bounds == bounds;
+            });
+
+    const bool hasLabel =
+        std::any_of(
+            surface.commands.begin(),
+            surface.commands.end(),
+            [&](const DrawCommand &command)
+            {
+                return command.type ==
+                           DrawCommandType::DrawText &&
+                       command.bounds == bounds &&
+                       command.text == label;
+            });
+
+    return hasBackground && hasLabel;
+}
+
+const DrawCommand *findTextCommand(
+    const RecordingDrawSurface &surface,
+    std::string_view expected)
 {
     const auto found =
         std::find_if(
             surface.commands.begin(),
             surface.commands.end(),
             [expected](
-                const DrawCommand& command
-            )
+                const DrawCommand &command)
             {
-                return
-                    command.type ==
-                        DrawCommandType::DrawText &&
-                    command.text == expected;
-            }
-        );
+                return command.type ==
+                           DrawCommandType::DrawText &&
+                       command.text == expected;
+            });
 
     if (
         found ==
-        surface.commands.end()
-    )
+        surface.commands.end())
     {
         return nullptr;
     }
@@ -296,142 +301,121 @@ const DrawCommand* findTextCommand(
 }
 
 std::size_t commandIndex(
-    const RecordingDrawSurface& surface,
-    const DrawCommand* command
-)
+    const RecordingDrawSurface &surface,
+    const DrawCommand *command)
 {
     assert(command != nullptr);
 
     return static_cast<std::size_t>(
         command -
-        surface.commands.data()
-    );
+        surface.commands.data());
 }
 
 bool containsTextWithColor(
-    const RecordingDrawSurface& surface,
+    const RecordingDrawSurface &surface,
     std::string_view expected,
-    UiColor color
-)
+    UiColor color)
 {
     return std::any_of(
         surface.commands.begin(),
         surface.commands.end(),
         [expected, color](
-            const DrawCommand& command
-        )
+            const DrawCommand &command)
         {
-            return
-                command.type ==
-                    DrawCommandType::DrawText &&
-                command.text == expected &&
-                command.color == color;
-        }
-    );
+            return command.type ==
+                       DrawCommandType::DrawText &&
+                   command.text == expected &&
+                   command.color == color;
+        });
 }
 
 bool rectInside(
-    const UiRect& inner,
-    const UiRect& outer
-)
+    const UiRect &inner,
+    const UiRect &outer)
 {
-    return
-        inner.x >= outer.x &&
-        inner.y >= outer.y &&
-        inner.x + inner.width <=
-            outer.x + outer.width &&
-        inner.y + inner.height <=
-            outer.y + outer.height;
+    return inner.x >= outer.x &&
+           inner.y >= outer.y &&
+           inner.x + inner.width <=
+               outer.x + outer.width &&
+           inner.y + inner.height <=
+               outer.y + outer.height;
 }
 
 bool pointInDisplay(
-    UiPoint value
-)
+    UiPoint value)
 {
-    return
-        value.x >= 0 &&
-        value.y >= 0 &&
-        value.x <
-            AGENDA_UI_DISPLAY_WIDTH &&
-        value.y <
-            AGENDA_UI_DISPLAY_HEIGHT;
+    return value.x >= 0 &&
+           value.y >= 0 &&
+           value.x <
+               AGENDA_UI_DISPLAY_WIDTH &&
+           value.y <
+               AGENDA_UI_DISPLAY_HEIGHT;
 }
 
 bool rectInDisplay(
-    const UiRect& value
-)
+    const UiRect &value)
 {
-    return
-        value.x >= 0 &&
-        value.y >= 0 &&
-        value.width >= 0 &&
-        value.height >= 0 &&
-        value.x + value.width <=
-            AGENDA_UI_DISPLAY_WIDTH &&
-        value.y + value.height <=
-            AGENDA_UI_DISPLAY_HEIGHT;
+    return value.x >= 0 &&
+           value.y >= 0 &&
+           value.width >= 0 &&
+           value.height >= 0 &&
+           value.x + value.width <=
+               AGENDA_UI_DISPLAY_WIDTH &&
+           value.y + value.height <=
+               AGENDA_UI_DISPLAY_HEIGHT;
 }
 
 bool commandInDisplay(
-    const DrawCommand& command
-)
+    const DrawCommand &command)
 {
     if (
         command.type ==
-        DrawCommandType::Clear
-    )
+        DrawCommandType::Clear)
     {
         return true;
     }
 
     if (
         command.type ==
-        DrawCommandType::DrawLine
-    )
+        DrawCommandType::DrawLine)
     {
-        return
-            pointInDisplay(
-                command.start
-            ) &&
-            pointInDisplay(
-                command.end
-            );
+        return pointInDisplay(
+                   command.start) &&
+               pointInDisplay(
+                   command.end);
     }
 
     if (
         command.type ==
             DrawCommandType::FillCircle ||
         command.type ==
-            DrawCommandType::DrawCircle
-    )
+            DrawCommandType::DrawCircle)
     {
-        return
-            command.start.x -
-                command.radius >= 0 &&
-            command.start.y -
-                command.radius >= 0 &&
-            command.start.x +
-                command.radius <
-                AGENDA_UI_DISPLAY_WIDTH &&
-            command.start.y +
-                command.radius <
-                AGENDA_UI_DISPLAY_HEIGHT;
+        return command.start.x -
+                       command.radius >=
+                   0 &&
+               command.start.y -
+                       command.radius >=
+                   0 &&
+               command.start.x +
+                       command.radius <
+                   AGENDA_UI_DISPLAY_WIDTH &&
+               command.start.y +
+                       command.radius <
+                   AGENDA_UI_DISPLAY_HEIGHT;
     }
 
     return rectInDisplay(
-        command.bounds
-    );
+        command.bounds);
 }
 
 bool allCommandsInBounds(
-    const RecordingDrawSurface& surface
-)
+    const RecordingDrawSurface &surface)
 {
     return std::all_of(
         surface.commands.begin(),
         surface.commands.end(),
-        commandInDisplay
-    );
+        commandInDisplay);
 }
 
 void test_renderer_clears_with_dark_background()
@@ -446,13 +430,11 @@ void test_renderer_clears_with_dark_background()
 
     assert(
         surface.commands.front().type ==
-        DrawCommandType::Clear
-    );
+        DrawCommandType::Clear);
 
     assert(
         surface.commands.front().color ==
-        AgendaUiColors::Background
-    );
+        AgendaUiColors::Background);
 }
 
 void test_renderer_does_not_change_input_view()
@@ -475,8 +457,7 @@ void test_renderer_does_not_change_input_view()
 
     assert(
         view.screen ==
-        AgendaUiScreen::Day
-    );
+        AgendaUiScreen::Day);
 
     assert(view.selectedDate.has_value());
     assert(view.selectedDate->day == 9);
@@ -498,29 +479,22 @@ void test_startup_error_shows_retry_action()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΣΦΑΛΜΑ ΕΚΚΙΝΗΣΗΣ"
-        )
-    );
+            "ΣΦΑΛΜΑ ΕΚΚΙΝΗΣΗΣ"));
 
     assert(
         containsText(
             surface,
-            "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ"
-        )
-    );
+            "ΑΠΟΤΥΧΙΑ ΑΝΑΓΝΩΣΗΣ"));
 
     assert(
         containsText(
             surface,
-            "ΞΑΝΑ"
-        )
-    );
+            "ΞΑΝΑ"));
 }
 
 void test_clock_setup_formats_date_and_time()
@@ -532,43 +506,100 @@ void test_clock_setup_formats_date_and_time()
 
     view.clockDraft = DateTime{
         Date{2026, 9, 9},
-        TimeOfDay{7, 5}
-    };
+        TimeOfDay{7, 5}};
 
     RecordingDrawSurface surface;
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΡΥΘΜΙΣΗ ΩΡΑΣ"
-        )
-    );
+            "ΡΥΘΜΙΣΗ ΩΡΑΣ"));
 
     assert(
         containsText(
             surface,
-            "09/09/2026"
-        )
-    );
+            "09/09/2026"));
 
     assert(
         containsText(
             surface,
-            "07:05"
-        )
-    );
+            "07:05"));
 
     assert(
         containsText(
             surface,
-            "ΕΝΤΑΞΕΙ"
-        )
-    );
+            "ΕΝΤΑΞΕΙ"));
+}
+
+void test_clock_setup_renders_all_adjustment_buttons()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::ClockSetup;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect datePrevious{
+        20,
+        67,
+        28,
+        34};
+
+    constexpr UiRect dateNext{
+        192,
+        67,
+        28,
+        34};
+
+    constexpr UiRect hourUp{
+        42,
+        116,
+        56,
+        18};
+
+    constexpr UiRect hourDown{
+        42,
+        158,
+        56,
+        18};
+
+    constexpr UiRect minuteUp{
+        142,
+        116,
+        56,
+        18};
+
+    constexpr UiRect minuteDown{
+        142,
+        158,
+        56,
+        18};
+
+    assert(
+        hasButton(
+            surface,
+            datePrevious,
+            "<"));
+
+    assert(
+        hasButton(
+            surface,
+            dateNext,
+            ">"));
+
+    assert(hasButton(surface, hourUp, "+"));
+    assert(hasButton(surface, hourDown, "-"));
+    assert(hasButton(surface, minuteUp, "+"));
+    assert(hasButton(surface, minuteDown, "-"));
 }
 
 void test_clock_setup_uses_only_in_bounds_commands()
@@ -582,12 +613,10 @@ void test_clock_setup_uses_only_in_bounds_commands()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
-        allCommandsInBounds(surface)
-    );
+        allCommandsInBounds(surface));
 }
 
 AgendaUiView septemberMonthView()
@@ -605,22 +634,18 @@ AgendaUiView septemberMonthView()
 
     const MonthGrid grid =
         buildMonthGrid(
-            view.displayedMonth
-        );
+            view.displayedMonth);
 
     for (
         std::size_t index = 0;
         index < grid.size();
-        ++index
-    )
+        ++index)
     {
         view.monthCells[index].date =
             grid[index].date;
 
-        view.monthCells[index].
-            inDisplayedMonth =
-                grid[index].
-                    inDisplayedMonth;
+        view.monthCells[index].inDisplayedMonth =
+            grid[index].inDisplayedMonth;
     }
 
     return view;
@@ -635,15 +660,12 @@ void test_month_renders_title_weekdays_and_all_cells()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΣΕΠΤΕΜΒΡΙΟΣ 2026"
-        )
-    );
+            "ΣΕΠΤΕΜΒΡΙΟΣ 2026"));
 
     assert(containsText(surface, "ΔΕ"));
     assert(containsText(surface, "ΤΡ"));
@@ -659,21 +681,16 @@ void test_month_renders_title_weekdays_and_all_cells()
                 surface.commands.begin(),
                 surface.commands.end(),
                 [](
-                    const DrawCommand& command
-                )
+                    const DrawCommand &command)
                 {
-                    return
-                        command.type ==
-                            DrawCommandType::
-                                DrawText &&
-                        rectInside(
-                            command.bounds,
-                            AgendaUiLayout::
-                                MonthGrid
-                        );
-                }
-            )
-        );
+                    return command.type ==
+                               DrawCommandType::
+                                   DrawText &&
+                           rectInside(
+                               command.bounds,
+                               AgendaUiLayout::
+                                   MonthGrid);
+                }));
 
     assert(cellTextCount == 42);
 }
@@ -696,8 +713,7 @@ void test_month_renders_selected_today_and_event_states()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     const std::size_t accentFills =
         static_cast<std::size_t>(
@@ -705,37 +721,30 @@ void test_month_renders_selected_today_and_event_states()
                 surface.commands.begin(),
                 surface.commands.end(),
                 [](
-                    const DrawCommand& command
-                )
+                    const DrawCommand &command)
                 {
-                    return
-                        command.type ==
-                            DrawCommandType::
-                                FillCircle &&
-                        command.color ==
-                            AgendaUiColors::
-                                Accent;
-                }
-            )
-        );
+                    return command.type ==
+                               DrawCommandType::
+                                   FillCircle &&
+                           command.color ==
+                               AgendaUiColors::
+                                   Accent;
+                }));
 
     const bool hasTodayOutline =
         std::any_of(
             surface.commands.begin(),
             surface.commands.end(),
             [](
-                const DrawCommand& command
-            )
+                const DrawCommand &command)
             {
-                return
-                    command.type ==
-                        DrawCommandType::
-                            DrawCircle &&
-                    command.color ==
-                        AgendaUiColors::
-                            Accent;
-            }
-        );
+                return command.type ==
+                           DrawCommandType::
+                               DrawCircle &&
+                       command.color ==
+                           AgendaUiColors::
+                               Accent;
+            });
 
     assert(accentFills >= 2);
     assert(hasTodayOutline);
@@ -753,32 +762,25 @@ void test_month_renders_disabled_navigation_and_adjacent_dates()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsTextWithColor(
             surface,
             "<",
-            AgendaUiColors::Disabled
-        )
-    );
+            AgendaUiColors::Disabled));
 
     assert(
         containsTextWithColor(
             surface,
             ">",
-            AgendaUiColors::PrimaryText
-        )
-    );
+            AgendaUiColors::PrimaryText));
 
     assert(
         containsTextWithColor(
             surface,
             "31",
-            AgendaUiColors::Disabled
-        )
-    );
+            AgendaUiColors::Disabled));
 }
 
 void test_day_renders_three_rows_and_page_state()
@@ -801,68 +803,51 @@ void test_day_renders_three_rows_and_page_state()
         AgendaUiEventRow{
             1,
             TimeOfDay{9, 5},
-            "Οδοντίατρος"
-        },
+            "Οδοντίατρος"},
         AgendaUiEventRow{
             2,
             TimeOfDay{12, 30},
-            "Συνάντηση"
-        },
+            "Συνάντηση"},
         AgendaUiEventRow{
             3,
             TimeOfDay{18, 0},
-            "Προπόνηση"
-        }
-    };
+            "Προπόνηση"}};
 
     RecordingDrawSurface surface;
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "09/09/2026"
-        )
-    );
+            "09/09/2026"));
 
     assert(
         containsText(
             surface,
-            "2/3"
-        )
-    );
+            "2/3"));
 
     assert(
         containsText(
             surface,
-            "09:05"
-        )
-    );
+            "09:05"));
 
     assert(
         containsText(
             surface,
-            "Οδοντίατρος"
-        )
-    );
+            "Οδοντίατρος"));
 
     assert(
         containsText(
             surface,
-            "Συνάντηση"
-        )
-    );
+            "Συνάντηση"));
 
     assert(
         containsText(
             surface,
-            "Προπόνηση"
-        )
-    );
+            "Προπόνηση"));
 }
 
 void test_day_uses_all_day_label_and_utf8_safe_preview()
@@ -883,40 +868,31 @@ void test_day_uses_all_day_label_and_utf8_safe_preview()
         AgendaUiEventRow{
             7,
             std::nullopt,
-            longText
-        }
-    };
+            longText}};
 
     RecordingDrawSurface surface;
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     const std::string expected =
         utf8Prefix(
             longText,
-            32
-        );
+            32);
 
     assert(
         containsText(
             surface,
-            "ΟΛΗ ΜΕΡΑ"
-        )
-    );
+            "ΟΛΗ ΜΕΡΑ"));
 
     assert(
         containsText(
             surface,
-            expected
-        )
-    );
+            expected));
 
     assert(
-        isValidUtf8(expected)
-    );
+        isValidUtf8(expected));
 }
 
 void test_event_details_render_event_or_safe_error()
@@ -934,58 +910,43 @@ void test_event_details_render_event_or_safe_error()
         false,
         DateTime{
             Date{2026, 9, 9},
-            TimeOfDay{10, 0}
-        }
-    };
+            TimeOfDay{10, 0}}};
 
     RecordingDrawSurface eventSurface;
 
     AgendaRenderer{}.render(
         view,
-        eventSurface
-    );
+        eventSurface);
 
     assert(
         containsText(
             eventSurface,
-            "10/09/2026"
-        )
-    );
+            "10/09/2026"));
 
     assert(
         containsText(
             eventSurface,
-            "08:05"
-        )
-    );
+            "08:05"));
 
     assert(
         containsText(
             eventSurface,
-            "Ιατρικό ραντεβού"
-        )
-    );
+            "Ιατρικό ραντεβού"));
 
     assert(
         containsText(
             eventSurface,
-            "ΠΙΣΩ"
-        )
-    );
+            "ΠΙΣΩ"));
 
     assert(
         containsText(
             eventSurface,
-            "ΑΛΛΑΓΗ"
-        )
-    );
+            "ΑΛΛΑΓΗ"));
 
     assert(
         containsText(
             eventSurface,
-            "ΔΙΑΓΡΑΦΗ"
-        )
-    );
+            "ΔΙΑΓΡΑΦΗ"));
 
     view.selectedEvent.reset();
 
@@ -993,15 +954,12 @@ void test_event_details_render_event_or_safe_error()
 
     AgendaRenderer{}.render(
         view,
-        missingSurface
-    );
+        missingSurface);
 
     assert(
         containsText(
             missingSurface,
-            "ΤΟ ΓΕΓΟΝΟΣ ΔΕΝ ΒΡΕΘΗΚΕ"
-        )
-    );
+            "ΤΟ ΓΕΓΟΝΟΣ ΔΕΝ ΒΡΕΘΗΚΕ"));
 }
 
 void test_editor_date_renders_draft_and_navigation()
@@ -1017,43 +975,32 @@ void test_editor_date_renders_draft_and_navigation()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΗΜΕΡΟΜΗΝΙΑ"
-        )
-    );
+            "ΗΜΕΡΟΜΗΝΙΑ"));
 
     assert(
         containsText(
             surface,
-            "10/09/2026"
-        )
-    );
+            "10/09/2026"));
 
     assert(
         containsText(
             surface,
-            "ΠΙΣΩ"
-        )
-    );
+            "ΠΙΣΩ"));
 
     assert(
         containsText(
             surface,
-            "ΕΠΟΜΕΝΟ"
-        )
-    );
+            "ΕΠΟΜΕΝΟ"));
 
     assert(
         containsText(
             surface,
-            "ΑΚΥΡΩΣΗ"
-        )
-    );
+            "ΑΚΥΡΩΣΗ"));
 }
 
 void test_editor_time_renders_timed_and_all_day_variants()
@@ -1069,29 +1016,22 @@ void test_editor_time_renders_timed_and_all_day_variants()
 
     AgendaRenderer{}.render(
         view,
-        timedSurface
-    );
+        timedSurface);
 
     assert(
         containsText(
             timedSurface,
-            "ΩΡΑ"
-        )
-    );
+            "ΩΡΑ"));
 
     assert(
         containsText(
             timedSurface,
-            "ΜΕ ΩΡΑ"
-        )
-    );
+            "ΜΕ ΩΡΑ"));
 
     assert(
         containsText(
             timedSurface,
-            "08:05"
-        )
-    );
+            "08:05"));
 
     view.editor.time.reset();
 
@@ -1099,22 +1039,17 @@ void test_editor_time_renders_timed_and_all_day_variants()
 
     AgendaRenderer{}.render(
         view,
-        allDaySurface
-    );
+        allDaySurface);
 
     assert(
         containsText(
             allDaySurface,
-            "ΟΛΗ ΜΕΡΑ"
-        )
-    );
+            "ΟΛΗ ΜΕΡΑ"));
 
     assert(
         !containsText(
             allDaySurface,
-            "08:05"
-        )
-    );
+            "08:05"));
 }
 
 void test_editor_review_renders_create_and_update_variants()
@@ -1139,43 +1074,32 @@ void test_editor_review_renders_create_and_update_variants()
 
     AgendaRenderer{}.render(
         view,
-        createSurface
-    );
+        createSurface);
 
     assert(
         containsText(
             createSurface,
-            "ΝΕΟ ΓΕΓΟΝΟΣ"
-        )
-    );
+            "ΝΕΟ ΓΕΓΟΝΟΣ"));
 
     assert(
         containsText(
             createSurface,
-            "10/09/2026"
-        )
-    );
+            "10/09/2026"));
 
     assert(
         containsText(
             createSurface,
-            "08:05"
-        )
-    );
+            "08:05"));
 
     assert(
         containsText(
             createSurface,
-            "Ραντεβού"
-        )
-    );
+            "Ραντεβού"));
 
     assert(
         containsText(
             createSurface,
-            "ΑΠΟΘΗΚΕΥΣΗ"
-        )
-    );
+            "ΑΠΟΘΗΚΕΥΣΗ"));
 
     view.editor.mode =
         AgendaUiEditorMode::Update;
@@ -1186,22 +1110,17 @@ void test_editor_review_renders_create_and_update_variants()
 
     AgendaRenderer{}.render(
         view,
-        updateSurface
-    );
+        updateSurface);
 
     assert(
         containsText(
             updateSurface,
-            "ΑΛΛΑΓΗ ΓΕΓΟΝΟΤΟΣ"
-        )
-    );
+            "ΑΛΛΑΓΗ ΓΕΓΟΝΟΤΟΣ"));
 
     assert(
         containsText(
             updateSurface,
-            "ΑΠΟΘΗΚΕΥΣΗ"
-        )
-    );
+            "ΑΠΟΘΗΚΕΥΣΗ"));
 }
 
 void test_t9_editor_renders_greek_letters_and_twelve_keys()
@@ -1222,70 +1141,54 @@ void test_t9_editor_renders_greek_letters_and_twelve_keys()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΕΛ"
-        )
-    );
+            "ΕΛ"));
 
     assert(
         containsText(
             surface,
-            "ΓΡΑΜΜΑΤΑ"
-        )
-    );
+            "ΓΡΑΜΜΑΤΑ"));
 
     assert(
         containsText(
             surface,
-            "πεζά"
-        )
-    );
+            "πεζά"));
 
     assert(
         containsText(
             surface,
-            "2 ΑΒΓ"
-        )
-    );
+            "2 ΑΒΓ"));
 
     assert(
         containsText(
             surface,
-            "7 ΠΡΣ"
-        )
-    );
+            "7 ΠΡΣ"));
 
     assert(
         containsText(
             surface,
-            "9 ΧΨΩ"
-        )
-    );
+            "9 ΧΨΩ"));
 
     const std::size_t keyCount =
         static_cast<std::size_t>(
             std::count_if(
                 surface.commands.begin(),
                 surface.commands.end(),
-                [](const DrawCommand& command)
+                [](const DrawCommand &command)
                 {
-                    return
-                        command.type ==
-                            DrawCommandType::
-                                FillRoundedRectangle &&
-                        command.bounds.x >=
-                            AgendaUiLayout::T9GridX &&
-                        command.bounds.y >=
-                            AgendaUiLayout::T9GridY &&
-                        command.bounds.y < 190;
-                }
-            )
-        );
+                    return command.type ==
+                               DrawCommandType::
+                                   FillRoundedRectangle &&
+                           command.bounds.x >=
+                               AgendaUiLayout::T9GridX &&
+                           command.bounds.y >=
+                               AgendaUiLayout::T9GridY &&
+                           command.bounds.y < 190;
+                }));
 
     assert(keyCount == 12);
 }
@@ -1308,50 +1211,37 @@ void test_t9_editor_renders_english_numbers_and_case_state()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "EN"
-        )
-    );
+            "EN"));
 
     assert(
         containsText(
             surface,
-            "ΑΡΙΘΜΟΙ"
-        )
-    );
+            "ΑΡΙΘΜΟΙ"));
 
     assert(
         containsText(
             surface,
-            "ΚΕΦΑΛΑΙΑ"
-        )
-    );
+            "ΚΕΦΑΛΑΙΑ"));
 
     assert(
         containsText(
             surface,
-            "2"
-        )
-    );
+            "2"));
 
     assert(
         containsText(
             surface,
-            "9"
-        )
-    );
+            "9"));
 
     assert(
         containsText(
             surface,
-            "0"
-        )
-    );
+            "0"));
 }
 
 void test_t9_editor_preview_is_utf8_safe()
@@ -1368,29 +1258,24 @@ void test_t9_editor_preview_is_utf8_safe()
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     const std::string expected =
         utf8Prefix(
             view.editor.text,
-            48
-        );
+            48);
 
-    const DrawCommand* preview =
+    const DrawCommand *preview =
         findTextCommand(
             surface,
-            expected
-        );
+            expected);
 
     assert(preview != nullptr);
     assert(isValidUtf8(preview->text));
 
     assert(
         utf8CodePointCount(
-            preview->text
-        ) <= 48
-    );
+            preview->text) <= 48);
 }
 
 void test_reminder_overlay_is_drawn_after_base_screen()
@@ -1409,84 +1294,68 @@ void test_reminder_overlay_is_drawn_after_base_screen()
         false,
         DateTime{
             Date{2026, 9, 9},
-            TimeOfDay{10, 0}
-        }
-    };
+            TimeOfDay{10, 0}}};
 
     RecordingDrawSurface surface;
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     const auto scrim =
         std::find_if(
             surface.commands.begin(),
             surface.commands.end(),
-            [](const DrawCommand& command)
+            [](const DrawCommand &command)
             {
-                return
-                    command.type ==
-                        DrawCommandType::
-                            FillRectangle &&
-                    command.bounds ==
-                        AgendaUiLayout::
-                            FullDisplay &&
-                    command.color ==
-                        AgendaUiColors::Overlay;
-            }
-        );
+                return command.type ==
+                           DrawCommandType::
+                               FillRectangle &&
+                       command.bounds ==
+                           AgendaUiLayout::
+                               FullDisplay &&
+                       command.color ==
+                           AgendaUiColors::Overlay;
+            });
 
     assert(
         scrim !=
-        surface.commands.end()
-    );
+        surface.commands.end());
 
     const std::size_t scrimIndex =
         static_cast<std::size_t>(
             scrim -
-            surface.commands.begin()
-        );
+            surface.commands.begin());
 
-    const DrawCommand* title =
+    const DrawCommand *title =
         findTextCommand(
             surface,
-            "ΥΠΕΝΘΥΜΙΣΗ"
-        );
+            "ΥΠΕΝΘΥΜΙΣΗ");
 
-    const DrawCommand* text =
+    const DrawCommand *text =
         findTextCommand(
             surface,
-            "Ιατρικό ραντεβού"
-        );
+            "Ιατρικό ραντεβού");
 
-    const DrawCommand* confirm =
+    const DrawCommand *confirm =
         findTextCommand(
             surface,
-            "ΕΝΤΑΞΕΙ"
-        );
+            "ΕΝΤΑΞΕΙ");
 
     assert(
         commandIndex(
             surface,
-            title
-        ) > scrimIndex
-    );
+            title) > scrimIndex);
 
     assert(
         commandIndex(
             surface,
-            text
-        ) > scrimIndex
-    );
+            text) > scrimIndex);
 
     assert(
         commandIndex(
             surface,
-            confirm
-        ) > scrimIndex
-    );
+            confirm) > scrimIndex);
 }
 
 void test_confirmation_overlays_render_both_choices()
@@ -1501,29 +1370,22 @@ void test_confirmation_overlays_render_both_choices()
 
     AgendaRenderer{}.render(
         view,
-        deleteSurface
-    );
+        deleteSurface);
 
     assert(
         containsText(
             deleteSurface,
-            "ΔΙΑΓΡΑΦΗ;"
-        )
-    );
+            "ΔΙΑΓΡΑΦΗ;"));
 
     assert(
         containsText(
             deleteSurface,
-            "ΝΑΙ"
-        )
-    );
+            "ΝΑΙ"));
 
     assert(
         containsText(
             deleteSurface,
-            "ΟΧΙ"
-        )
-    );
+            "ΟΧΙ"));
 
     view.overlay =
         AgendaUiOverlay::ConfirmDiscard;
@@ -1532,29 +1394,22 @@ void test_confirmation_overlays_render_both_choices()
 
     AgendaRenderer{}.render(
         view,
-        discardSurface
-    );
+        discardSurface);
 
     assert(
         containsText(
             discardSurface,
-            "ΑΠΟΡΡΙΨΗ ΑΛΛΑΓΩΝ;"
-        )
-    );
+            "ΑΠΟΡΡΙΨΗ ΑΛΛΑΓΩΝ;"));
 
     assert(
         containsText(
             discardSurface,
-            "ΝΑΙ"
-        )
-    );
+            "ΝΑΙ"));
 
     assert(
         containsText(
             discardSurface,
-            "ΟΧΙ"
-        )
-    );
+            "ΟΧΙ"));
 }
 
 void test_operation_and_clock_errors_render_safe_messages()
@@ -1572,29 +1427,22 @@ void test_operation_and_clock_errors_render_safe_messages()
 
     AgendaRenderer{}.render(
         view,
-        operationSurface
-    );
+        operationSurface);
 
     assert(
         containsText(
             operationSurface,
-            "ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ"
-        )
-    );
+            "ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ"));
 
     assert(
         containsText(
             operationSurface,
-            "ΞΑΝΑ"
-        )
-    );
+            "ΞΑΝΑ"));
 
     assert(
         containsText(
             operationSurface,
-            "ΑΚΥΡΩΣΗ"
-        )
-    );
+            "ΑΚΥΡΩΣΗ"));
 
     view.controllerError =
         AgendaControllerError::None;
@@ -1606,15 +1454,12 @@ void test_operation_and_clock_errors_render_safe_messages()
 
     AgendaRenderer{}.render(
         view,
-        validationSurface
-    );
+        validationSurface);
 
     assert(
         containsText(
             validationSurface,
-            "ΚΕΝΟ ΚΕΙΜΕΝΟ"
-        )
-    );
+            "ΚΕΝΟ ΚΕΙΜΕΝΟ"));
 
     view.overlay =
         AgendaUiOverlay::ClockError;
@@ -1629,15 +1474,12 @@ void test_operation_and_clock_errors_render_safe_messages()
 
     AgendaRenderer{}.render(
         view,
-        clockSurface
-    );
+        clockSurface);
 
     assert(
         containsText(
             clockSurface,
-            "ΜΗ ΕΓΚΥΡΗ ΩΡΑ"
-        )
-    );
+            "ΜΗ ΕΓΚΥΡΗ ΩΡΑ"));
 }
 
 void test_unknown_screen_renders_safe_error()
@@ -1646,28 +1488,22 @@ void test_unknown_screen_renders_safe_error()
 
     view.screen =
         static_cast<AgendaUiScreen>(
-            999
-        );
+            999);
 
     RecordingDrawSurface surface;
 
     AgendaRenderer{}.render(
         view,
-        surface
-    );
+        surface);
 
     assert(
         containsText(
             surface,
-            "ΣΦΑΛΜΑ ΠΡΟΒΟΛΗΣ"
-        )
-    );
+            "ΣΦΑΛΜΑ ΠΡΟΒΟΛΗΣ"));
 
     assert(
         allCommandsInBounds(
-            surface
-        )
-    );
+            surface));
 }
 
 void test_missing_required_values_render_safe_errors()
@@ -1681,15 +1517,12 @@ void test_missing_required_values_render_safe_errors()
 
     AgendaRenderer{}.render(
         dayView,
-        daySurface
-    );
+        daySurface);
 
     assert(
         containsText(
             daySurface,
-            "ΗΜΕΡΟΜΗΝΙΑ ΜΗ ΔΙΑΘΕΣΙΜΗ"
-        )
-    );
+            "ΗΜΕΡΟΜΗΝΙΑ ΜΗ ΔΙΑΘΕΣΙΜΗ"));
 
     AgendaUiView reminderView =
         septemberMonthView();
@@ -1703,15 +1536,12 @@ void test_missing_required_values_render_safe_errors()
 
     AgendaRenderer{}.render(
         reminderView,
-        reminderSurface
-    );
+        reminderSurface);
 
     assert(
         containsText(
             reminderSurface,
-            "ΥΠΕΝΘΥΜΙΣΗ ΜΗ ΔΙΑΘΕΣΙΜΗ"
-        )
-    );
+            "ΥΠΕΝΘΥΜΙΣΗ ΜΗ ΔΙΑΘΕΣΙΜΗ"));
 }
 
 void test_every_supported_screen_stays_in_bounds()
@@ -1721,8 +1551,7 @@ void test_every_supported_screen_stays_in_bounds()
 
     view.clockDraft = DateTime{
         Date{2026, 9, 9},
-        TimeOfDay{10, 0}
-    };
+        TimeOfDay{10, 0}};
 
     view.selectedDate =
         Date{2026, 9, 9};
@@ -1735,9 +1564,7 @@ void test_every_supported_screen_stays_in_bounds()
         false,
         DateTime{
             Date{2026, 9, 9},
-            TimeOfDay{10, 0}
-        }
-    };
+            TimeOfDay{10, 0}}};
 
     view.editor.date =
         Date{2026, 9, 10};
@@ -1750,23 +1577,21 @@ void test_every_supported_screen_stays_in_bounds()
 
     const std::array<
         AgendaUiScreen,
-        9
-    > screens{
-        AgendaUiScreen::ClockSetup,
-        AgendaUiScreen::Month,
-        AgendaUiScreen::Day,
-        AgendaUiScreen::EventDetails,
-        AgendaUiScreen::EditorDate,
-        AgendaUiScreen::EditorTime,
-        AgendaUiScreen::EditorText,
-        AgendaUiScreen::EditorReview,
-        AgendaUiScreen::StartupError
-    };
+        9>
+        screens{
+            AgendaUiScreen::ClockSetup,
+            AgendaUiScreen::Month,
+            AgendaUiScreen::Day,
+            AgendaUiScreen::EventDetails,
+            AgendaUiScreen::EditorDate,
+            AgendaUiScreen::EditorTime,
+            AgendaUiScreen::EditorText,
+            AgendaUiScreen::EditorReview,
+            AgendaUiScreen::StartupError};
 
     for (
         AgendaUiScreen screen :
-        screens
-    )
+        screens)
     {
         view.screen = screen;
 
@@ -1774,17 +1599,217 @@ void test_every_supported_screen_stays_in_bounds()
 
         AgendaRenderer{}.render(
             view,
-            surface
-        );
+            surface);
 
         assert(
             allCommandsInBounds(
-                surface
-            )
-        );
+                surface));
     }
 }
 
+void test_day_renders_visible_back_and_create_buttons()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::Day;
+
+    view.selectedDate =
+        Date{2026, 9, 10};
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect backButton{
+        20,
+        8,
+        28,
+        28};
+
+    constexpr UiRect createButton{
+        192,
+        8,
+        28,
+        28};
+
+    assert(
+        hasButton(
+            surface,
+            backButton,
+            "<"));
+
+    assert(
+        hasButton(
+            surface,
+            createButton,
+            "+"));
+}
+
+void test_editor_date_renders_visible_day_buttons()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::EditorDate;
+
+    view.editor.date =
+        Date{2026, 9, 10};
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect previousDayButton{
+        20,
+        67,
+        28,
+        34};
+
+    constexpr UiRect nextDayButton{
+        192,
+        67,
+        28,
+        34};
+
+    assert(
+        hasButton(
+            surface,
+            previousDayButton,
+            "<"));
+
+    assert(
+        hasButton(
+            surface,
+            nextDayButton,
+            ">"));
+}
+
+void test_editor_time_renders_mode_and_time_buttons()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::EditorTime;
+
+    view.editor.time =
+        TimeOfDay{8, 30};
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect timedMode{
+        28,
+        58,
+        88,
+        32};
+
+    constexpr UiRect allDayMode{
+        124,
+        58,
+        88,
+        32};
+
+    constexpr UiRect hourUp{
+        42,
+        110,
+        56,
+        18};
+
+    constexpr UiRect hourDown{
+        42,
+        158,
+        56,
+        18};
+
+    constexpr UiRect minuteUp{
+        142,
+        110,
+        56,
+        18};
+
+    constexpr UiRect minuteDown{
+        142,
+        158,
+        56,
+        18};
+
+    assert(
+        hasButton(
+            surface,
+            timedMode,
+            "ΜΕ ΩΡΑ"));
+
+    assert(
+        hasButton(
+            surface,
+            allDayMode,
+            "ΟΛΗ ΜΕΡΑ"));
+
+    assert(hasButton(surface, hourUp, "+"));
+    assert(hasButton(surface, hourDown, "-"));
+    assert(hasButton(surface, minuteUp, "+"));
+    assert(hasButton(surface, minuteDown, "-"));
+}
+
+void test_t9_editor_renders_language_key()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::EditorText;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect languageKey{
+        45,
+        166,
+        50,
+        22};
+
+    assert(
+        hasButton(
+            surface,
+            languageKey,
+            "EL/EN"));
+}
+
+void test_t9_editor_renders_backspace_key()
+{
+    AgendaUiView view;
+
+    view.screen =
+        AgendaUiScreen::EditorText;
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    constexpr UiRect backspaceKey{
+        155,
+        166,
+        50,
+        22};
+
+    assert(
+        hasButton(
+            surface,
+            backspaceKey,
+            "<"));
+}
 
 int main()
 {
@@ -1792,15 +1817,19 @@ int main()
     test_renderer_does_not_change_input_view();
     test_startup_error_shows_retry_action();
     test_clock_setup_formats_date_and_time();
+    test_clock_setup_renders_all_adjustment_buttons();
     test_clock_setup_uses_only_in_bounds_commands();
     test_month_renders_title_weekdays_and_all_cells();
     test_month_renders_selected_today_and_event_states();
     test_month_renders_disabled_navigation_and_adjacent_dates();
     test_day_renders_three_rows_and_page_state();
+    test_day_renders_visible_back_and_create_buttons();
     test_day_uses_all_day_label_and_utf8_safe_preview();
     test_event_details_render_event_or_safe_error();
     test_editor_date_renders_draft_and_navigation();
+    test_editor_date_renders_visible_day_buttons();
     test_editor_time_renders_timed_and_all_day_variants();
+    test_editor_time_renders_mode_and_time_buttons();
     test_editor_review_renders_create_and_update_variants();
     test_t9_editor_renders_greek_letters_and_twelve_keys();
     test_t9_editor_renders_english_numbers_and_case_state();
@@ -1811,6 +1840,8 @@ int main()
     test_unknown_screen_renders_safe_error();
     test_missing_required_values_render_safe_errors();
     test_every_supported_screen_stays_in_bounds();
+    test_t9_editor_renders_language_key();
+    test_t9_editor_renders_backspace_key();
 
     std::cout
         << "All agenda renderer tests passed.\n";
