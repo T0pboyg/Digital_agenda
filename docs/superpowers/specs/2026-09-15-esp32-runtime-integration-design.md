@@ -1,6 +1,6 @@
 # ESP32 Runtime Integration Design
 
-Status: Approved  
+Status: Approved
 Date: 2026-09-15
 
 ## Goal
