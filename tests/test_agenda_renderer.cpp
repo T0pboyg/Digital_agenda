@@ -1297,6 +1297,65 @@ void test_t9_editor_renders_english_numbers_and_case_state()
             "0"));
 }
 
+void test_t9_space_key_label_follows_input_mode()
+{
+    constexpr UiRect spaceKey{
+        100,
+        166,
+        50,
+        22};
+
+    AgendaUiView view;
+    view.screen =
+        AgendaUiScreen::EditorText;
+    view.t9Mode =
+        T9Mode::Letters;
+    view.t9Language =
+        T9Language::Greek;
+
+    RecordingDrawSurface greekSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        greekSurface);
+
+    assert(
+        hasButton(
+            greekSurface,
+            spaceKey,
+            "ΚΕΝΟ"));
+
+    view.t9Language =
+        T9Language::English;
+
+    RecordingDrawSurface englishSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        englishSurface);
+
+    assert(
+        hasButton(
+            englishSurface,
+            spaceKey,
+            "SPACE"));
+
+    view.t9Mode =
+        T9Mode::Numbers;
+
+    RecordingDrawSurface numberSurface;
+
+    AgendaRenderer{}.render(
+        view,
+        numberSurface);
+
+    assert(
+        hasButton(
+            numberSurface,
+            spaceKey,
+            "0"));
+}
+
 void test_t9_editor_preview_is_utf8_safe()
 {
     AgendaUiView view;
@@ -1890,6 +1949,7 @@ int main()
     test_editor_review_renders_create_and_update_variants();
     test_t9_editor_renders_greek_letters_and_twelve_keys();
     test_t9_editor_renders_english_numbers_and_case_state();
+    test_t9_space_key_label_follows_input_mode();
     test_t9_editor_preview_is_utf8_safe();
     test_reminder_overlay_is_drawn_after_base_screen();
     test_confirmation_overlays_render_both_choices();
