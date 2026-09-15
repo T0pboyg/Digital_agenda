@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <type_traits>
 
 #include "platform/esp32/littlefs_byte_storage.h"
 
@@ -120,17 +121,22 @@ namespace
         files.clear();
     }
 
+    LittleFsApi makeFakeApi()
+    {
+        return LittleFsApi{
+            fakeMount,
+            fakeExists,
+            fakeReadFile,
+            fakeWriteFile,
+            fakeRenameFile,
+            fakeRemoveFile};
+    }
+
     LittleFsByteStorage makeStorage()
     {
         return LittleFsByteStorage{
             "/agenda.bin",
-            LittleFsApi{
-                fakeMount,
-                fakeExists,
-                fakeReadFile,
-                fakeWriteFile,
-                fakeRenameFile,
-                fakeRemoveFile}};
+            makeFakeApi()};
     }
 
     void test_mount_never_formats_and_handles_missing_file()
@@ -280,10 +286,60 @@ namespace
             files.at("/agenda.bin") ==
             preservedBytes);
     }
+
+    void test_production_constructor_accepts_an_explicit_path()
+    {
+        static_assert(
+            std::is_constructible_v<
+                LittleFsByteStorage,
+                std::string>);
+
+        LittleFsByteStorage primary{
+            std::string{"/agenda.bin"}};
+
+        LittleFsByteStorage backup{
+            std::string{"/agenda.backup.bin"}};
+
+        (void)primary;
+        (void)backup;
+    }
+
+    void test_primary_and_backup_paths_store_independent_bytes()
+    {
+        resetFakeFileSystem();
+
+        LittleFsByteStorage primary{
+            "/agenda.bin",
+            makeFakeApi()};
+
+        LittleFsByteStorage backup{
+            "/agenda.backup.bin",
+            makeFakeApi()};
+
+        assert(primary.begin());
+        assert(backup.begin());
+
+        assert(
+            primary.write({1, 2, 3}) ==
+            ByteStorageError::None);
+
+        assert(
+            backup.write({7, 8}) ==
+            ByteStorageError::None);
+
+        assert((files.at("/agenda.bin") ==
+                std::vector<std::uint8_t>{1, 2, 3}));
+
+        assert((files.at("/agenda.backup.bin") ==
+                std::vector<std::uint8_t>{7, 8}));
+    }
 }
 
 int main()
 {
+
+    test_production_constructor_accepts_an_explicit_path();
+    test_primary_and_backup_paths_store_independent_bytes();
     test_mount_never_formats_and_handles_missing_file();
     test_read_returns_exact_bytes_and_reports_failure();
     test_write_replaces_file_without_losing_old_data_on_failure();

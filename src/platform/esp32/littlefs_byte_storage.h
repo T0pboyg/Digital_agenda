@@ -44,6 +44,9 @@ class LittleFsByteStorage final : public ByteStorage
 public:
     LittleFsByteStorage();
 
+    explicit LittleFsByteStorage(
+        std::string path);
+
     LittleFsByteStorage(
         std::string path,
         LittleFsApi api);

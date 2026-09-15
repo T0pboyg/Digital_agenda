@@ -178,7 +178,14 @@ namespace
 
 LittleFsByteStorage::LittleFsByteStorage()
     : LittleFsByteStorage(
-          "/agenda.bin",
+          std::string{"/agenda.bin"})
+{
+}
+
+LittleFsByteStorage::LittleFsByteStorage(
+    std::string path)
+    : LittleFsByteStorage(
+          std::move(path),
           defaultLittleFsApi())
 {
 }
