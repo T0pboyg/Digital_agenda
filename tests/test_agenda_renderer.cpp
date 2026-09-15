@@ -418,6 +418,33 @@ bool allCommandsInBounds(
         commandInDisplay);
 }
 
+bool rectCenterIsVisibleOnRoundDisplay(
+    const UiRect &bounds)
+{
+    constexpr int safeMargin = 10;
+    constexpr int centerX =
+        AGENDA_UI_DISPLAY_WIDTH / 2;
+    constexpr int centerY =
+        AGENDA_UI_DISPLAY_HEIGHT / 2;
+    constexpr int visibleRadius =
+        AGENDA_UI_DISPLAY_WIDTH / 2 -
+        safeMargin;
+
+    const int controlCenterX =
+        bounds.x + bounds.width / 2;
+    const int controlCenterY =
+        bounds.y + bounds.height / 2;
+    const int deltaX =
+        controlCenterX - centerX;
+    const int deltaY =
+        controlCenterY - centerY;
+
+    return
+        deltaX * deltaX +
+            deltaY * deltaY <=
+        visibleRadius * visibleRadius;
+}
+
 void test_renderer_clears_with_dark_background()
 {
     AgendaUiView view;
@@ -781,6 +808,32 @@ void test_month_renders_disabled_navigation_and_adjacent_dates()
             surface,
             "31",
             AgendaUiColors::Disabled));
+}
+
+void test_month_navigation_is_visible_on_round_display()
+{
+    const AgendaUiView view =
+        septemberMonthView();
+
+    RecordingDrawSurface surface;
+
+    AgendaRenderer{}.render(
+        view,
+        surface);
+
+    const DrawCommand *previous =
+        findTextCommand(surface, "<");
+    const DrawCommand *next =
+        findTextCommand(surface, ">");
+
+    assert(previous != nullptr);
+    assert(next != nullptr);
+    assert(
+        rectCenterIsVisibleOnRoundDisplay(
+            previous->bounds));
+    assert(
+        rectCenterIsVisibleOnRoundDisplay(
+            next->bounds));
 }
 
 void test_day_renders_three_rows_and_page_state()
@@ -1623,29 +1676,32 @@ void test_day_renders_visible_back_and_create_buttons()
         view,
         surface);
 
-    constexpr UiRect backButton{
-        20,
-        8,
-        28,
-        28};
+    const DrawCommand *back =
+        findTextCommand(surface, "<");
+    const DrawCommand *create =
+        findTextCommand(surface, "+");
 
-    constexpr UiRect createButton{
-        192,
-        8,
-        28,
-        28};
+    assert(back != nullptr);
+    assert(create != nullptr);
 
     assert(
         hasButton(
             surface,
-            backButton,
+            back->bounds,
             "<"));
 
     assert(
         hasButton(
             surface,
-            createButton,
+            create->bounds,
             "+"));
+
+    assert(
+        rectCenterIsVisibleOnRoundDisplay(
+            back->bounds));
+    assert(
+        rectCenterIsVisibleOnRoundDisplay(
+            create->bounds));
 }
 
 void test_editor_date_renders_visible_day_buttons()
@@ -1822,6 +1878,7 @@ int main()
     test_month_renders_title_weekdays_and_all_cells();
     test_month_renders_selected_today_and_event_states();
     test_month_renders_disabled_navigation_and_adjacent_dates();
+    test_month_navigation_is_visible_on_round_display();
     test_day_renders_three_rows_and_page_state();
     test_day_renders_visible_back_and_create_buttons();
     test_day_uses_all_day_label_and_utf8_safe_preview();

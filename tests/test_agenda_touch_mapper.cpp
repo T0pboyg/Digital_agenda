@@ -15,7 +15,7 @@ void test_month_previous_arrow_maps_to_previous_month()
     const auto action =
         AgendaTouchMapper{}.map(
             view,
-            UiPoint{34, 22},
+            UiPoint{72, 200},
             100);
 
     assert(action.has_value());
@@ -37,7 +37,7 @@ void test_month_next_arrow_maps_to_next_month()
     const auto action =
         AgendaTouchMapper{}.map(
             view,
-            UiPoint{206, 22},
+            UiPoint{168, 200},
             200);
 
     assert(action.has_value());

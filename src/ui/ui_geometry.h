@@ -141,17 +141,17 @@ constexpr UiRect Header{
 };
 
 constexpr UiRect MonthPrevious{
-    20,
-    8,
-    28,
-    28
+    44,
+    184,
+    56,
+    32
 };
 
 constexpr UiRect MonthNext{
-    192,
-    8,
-    28,
-    28
+    140,
+    184,
+    56,
+    32
 };
 
 constexpr UiRect Subheader{
@@ -215,21 +215,21 @@ constexpr int MonthCellHeight = 21;
 
 constexpr UiRect DayRow0{
     25,
-    54,
+    60,
     190,
     38
 };
 
 constexpr UiRect DayRow1{
     25,
-    96,
+    102,
     190,
     38
 };
 
 constexpr UiRect DayRow2{
     25,
-    138,
+    144,
     190,
     38
 };
@@ -347,22 +347,22 @@ constexpr UiRect T9Status{
 };
 
 constexpr UiRect DayBack{
-    20,
-    8,
+    56,
+    10,
     28,
     28
 };
 
 constexpr UiRect DayHeader{
     52,
-    8,
+    40,
     136,
-    28
+    18
 };
 
 constexpr UiRect DayCreate{
-    192,
-    8,
+    156,
+    10,
     28,
     28
 };
