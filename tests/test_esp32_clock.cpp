@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstdint>
 #include <ctime>
 #include <iostream>
 
@@ -9,6 +10,11 @@ namespace
     bool readSucceeds = true;
     bool writeSucceeds = true;
     bool writeCalled = false;
+    bool epochReadSucceeds = true;
+    bool conversionSucceeds = true;
+
+    std::int64_t currentEpochSeconds = 0;
+    std::int64_t convertedEpochSeconds = 0;
 
     std::tm readValue{};
     std::tm writtenValue{};
@@ -34,11 +40,30 @@ namespace
         return writeSucceeds;
     }
 
+    bool fakeReadEpochSeconds(
+        std::int64_t& value)
+    {
+        value = currentEpochSeconds;
+        return epochReadSucceeds;
+    }
+
+    bool fakeConvertLocalDateTime(
+        const DateTime&,
+        std::int64_t& value)
+    {
+        value = convertedEpochSeconds;
+        return conversionSucceeds;
+    }
+
     void resetFakes()
     {
         readSucceeds = true;
         writeSucceeds = true;
         writeCalled = false;
+        epochReadSucceeds = true;
+        conversionSucceeds = true;
+        currentEpochSeconds = 0;
+        convertedEpochSeconds = 0;
 
         readValue = {};
         writtenValue = {};
@@ -49,7 +74,9 @@ namespace
         return Esp32Clock{
             Esp32ClockApi{
                 fakeReadLocalTime,
-                fakeWriteLocalTime}};
+                fakeWriteLocalTime,
+                fakeReadEpochSeconds,
+                fakeConvertLocalDateTime}};
     }
 
     void test_read_returns_current_local_date_time()
@@ -143,6 +170,68 @@ namespace
 
         assert(writeCalled);
     }
+
+    void test_wake_delay_uses_current_seconds_exactly()
+    {
+        resetFakes();
+        currentEpochSeconds = 1000000;
+        convertedEpochSeconds = 1000061;
+
+        const WakeDelayResult result =
+            makeClock().delayUntil(
+                DateTime{
+                    Date{2026, 9, 17},
+                    TimeOfDay{17, 0}});
+
+        assert(result.error == ClockError::None);
+        assert(!result.dueNow);
+        assert(result.microseconds == 61000000ULL);
+    }
+
+    void test_non_positive_wake_delay_is_due_now()
+    {
+        resetFakes();
+        currentEpochSeconds = 1000000;
+        convertedEpochSeconds = 1000000;
+
+        const WakeDelayResult result =
+            makeClock().delayUntil(
+                DateTime{
+                    Date{2026, 9, 17},
+                    TimeOfDay{17, 0}});
+
+        assert(result.error == ClockError::None);
+        assert(result.dueNow);
+        assert(result.microseconds == 0);
+    }
+
+    void test_wake_delay_reports_invalid_and_conversion_errors()
+    {
+        resetFakes();
+        assert(
+            makeClock().delayUntil(
+                DateTime{
+                    Date{2026, 2, 30},
+                    TimeOfDay{17, 0}}).error ==
+            ClockError::InvalidDateTime);
+
+        epochReadSucceeds = false;
+        assert(
+            makeClock().delayUntil(
+                DateTime{
+                    Date{2026, 9, 17},
+                    TimeOfDay{17, 0}}).error ==
+            ClockError::ReadFailed);
+
+        resetFakes();
+        conversionSucceeds = false;
+        assert(
+            makeClock().delayUntil(
+                DateTime{
+                    Date{2026, 9, 17},
+                    TimeOfDay{17, 0}}).error ==
+            ClockError::ReadFailed);
+    }
 }
 
 int main()
@@ -150,6 +239,9 @@ int main()
     test_read_returns_current_local_date_time();
     test_read_reports_failure_and_unset_clock();
     test_set_validates_and_writes_local_date_time();
+    test_wake_delay_uses_current_seconds_exactly();
+    test_non_positive_wake_delay_is_due_now();
+    test_wake_delay_reports_invalid_and_conversion_errors();
 
     std::cout
         << "All ESP32 clock tests passed.\n";

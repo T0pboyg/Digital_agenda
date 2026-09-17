@@ -97,6 +97,51 @@ namespace
                    &rawTime,
                    nullptr) == 0;
     }
+
+    bool readSystemEpochSeconds(
+        std::int64_t& value
+    )
+    {
+        const time_t seconds = ::time(nullptr);
+
+        if (seconds == static_cast<time_t>(-1))
+        {
+            return false;
+        }
+
+        value = static_cast<std::int64_t>(seconds);
+        return true;
+    }
+
+    bool localDateTimeToSystemEpochSeconds(
+        const DateTime& value,
+        std::int64_t& seconds
+    )
+    {
+        if (!configureGreeceTimeZone())
+        {
+            return false;
+        }
+
+        std::tm localTime{};
+        localTime.tm_year = value.date.year - 1900;
+        localTime.tm_mon = value.date.month - 1;
+        localTime.tm_mday = value.date.day;
+        localTime.tm_hour = value.time.hour;
+        localTime.tm_min = value.time.minute;
+        localTime.tm_sec = 0;
+        localTime.tm_isdst = -1;
+
+        const time_t converted = ::mktime(&localTime);
+
+        if (converted == static_cast<time_t>(-1))
+        {
+            return false;
+        }
+
+        seconds = static_cast<std::int64_t>(converted);
+        return true;
+    }
 #else
     bool readSystemLocalTime(
         std::tm &)
@@ -109,13 +154,28 @@ namespace
     {
         return false;
     }
+
+    bool readSystemEpochSeconds(std::int64_t&)
+    {
+        return false;
+    }
+
+    bool localDateTimeToSystemEpochSeconds(
+        const DateTime&,
+        std::int64_t&
+    )
+    {
+        return false;
+    }
 #endif
 }
 
 Esp32Clock::Esp32Clock()
     : api_{
           readSystemLocalTime,
-          writeSystemLocalTime}
+          writeSystemLocalTime,
+          readSystemEpochSeconds,
+          localDateTimeToSystemEpochSeconds}
 {
 }
 
@@ -204,4 +264,66 @@ ClockError Esp32Clock::set(
     }
 
     return ClockError::None;
+}
+
+WakeDelayResult Esp32Clock::delayUntil(
+    const DateTime& target
+) const
+{
+    if (
+        !isValidDate(target.date) ||
+        !isValidTime(target.time)
+    )
+    {
+        return WakeDelayResult{
+            ClockError::InvalidDateTime,
+            false,
+            0
+        };
+    }
+
+    if (
+        api_.readEpochSeconds == nullptr ||
+        api_.localDateTimeToEpochSeconds == nullptr
+    )
+    {
+        return WakeDelayResult{
+            ClockError::Unavailable,
+            false,
+            0
+        };
+    }
+
+    std::int64_t nowSeconds = 0;
+    std::int64_t targetSeconds = 0;
+
+    if (
+        !api_.readEpochSeconds(nowSeconds) ||
+        !api_.localDateTimeToEpochSeconds(
+            target,
+            targetSeconds)
+    )
+    {
+        return WakeDelayResult{
+            ClockError::ReadFailed,
+            false,
+            0
+        };
+    }
+
+    if (targetSeconds <= nowSeconds)
+    {
+        return WakeDelayResult{
+            ClockError::None,
+            true,
+            0
+        };
+    }
+
+    return WakeDelayResult{
+        ClockError::None,
+        false,
+        static_cast<std::uint64_t>(
+            targetSeconds - nowSeconds) * 1000000ULL
+    };
 }
