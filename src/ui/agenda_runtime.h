@@ -13,6 +13,7 @@ struct AgendaRuntimeUpdateResult
     bool touchPolled = false;
     TouchInputError touchError =
         TouchInputError::None;
+    bool touchActivity = false;
     bool actionHandled = false;
     bool ticked = false;
     bool rendered = false;
@@ -32,6 +33,8 @@ public:
     void begin(
         std::uint32_t nowMilliseconds);
 
+    void suppressActionsUntilRelease();
+
     AgendaRuntimeUpdateResult update(
         std::uint32_t nowMilliseconds);
 
@@ -44,6 +47,7 @@ private:
     DrawSurface &surface_;
 
     bool started_ = false;
+    bool suppressUntilRelease_ = false;
     std::uint32_t lastTouchPollMilliseconds_ = 0;
     std::uint32_t lastTickMilliseconds_ = 0;
 };

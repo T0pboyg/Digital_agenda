@@ -39,6 +39,12 @@ void AgendaRuntime::begin(
     started_ = true;
 }
 
+void AgendaRuntime::suppressActionsUntilRelease()
+{
+    releaseDetector_.reset();
+    suppressUntilRelease_ = true;
+}
+
 AgendaRuntimeUpdateResult AgendaRuntime::update(
     std::uint32_t nowMilliseconds)
 {
@@ -67,22 +73,38 @@ AgendaRuntimeUpdateResult AgendaRuntime::update(
 
         if (input.error == TouchInputError::None)
         {
-            const std::optional<UiPoint> released =
-                releaseDetector_.update(input.sample);
+            result.touchActivity =
+                input.sample.touched &&
+                input.sample.x < AGENDA_UI_DISPLAY_WIDTH &&
+                input.sample.y < AGENDA_UI_DISPLAY_HEIGHT;
 
-            if (released.has_value())
+            if (suppressUntilRelease_)
             {
-                const std::optional<AgendaUiAction> action =
-                    touchMapper_.map(
-                        stateMachine_.view(),
-                        *released,
-                        nowMilliseconds);
-
-                if (action.has_value())
+                if (!input.sample.touched)
                 {
-                    stateMachine_.handle(*action);
-                    result.actionHandled = true;
-                    renderRequired = true;
+                    suppressUntilRelease_ = false;
+                    releaseDetector_.reset();
+                }
+            }
+            else
+            {
+                const std::optional<UiPoint> released =
+                    releaseDetector_.update(input.sample);
+
+                if (released.has_value())
+                {
+                    const std::optional<AgendaUiAction> action =
+                        touchMapper_.map(
+                            stateMachine_.view(),
+                            *released,
+                            nowMilliseconds);
+
+                    if (action.has_value())
+                    {
+                        stateMachine_.handle(*action);
+                        result.actionHandled = true;
+                        renderRequired = true;
+                    }
                 }
             }
         }

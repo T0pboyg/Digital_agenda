@@ -8,6 +8,8 @@
 class TouchReleaseDetector
 {
 public:
+    void reset();
+
     std::optional<UiPoint> update(
         const TouchSample &sample);
 

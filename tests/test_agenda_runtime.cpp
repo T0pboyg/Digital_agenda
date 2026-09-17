@@ -164,7 +164,7 @@ namespace
 
         stateMachine.start();
 
-        ScriptedTouchInput touch({{TouchInputError::None, {true, 200, 20}},
+        ScriptedTouchInput touch({{TouchInputError::None, {true, 168, 200}},
                                   {TouchInputError::None, {false, 0, 0}},
                                   {TouchInputError::None, {false, 0, 0}}});
 
@@ -249,12 +249,101 @@ namespace
         assert(surface.clearCount == 1);
         assert(clock.readCount == 2);
     }
+
+    void test_only_successful_in_bounds_touch_reports_activity()
+    {
+        RuntimeStorage storage;
+        RuntimeClock clock;
+        AgendaRepository repository(storage);
+        AgendaController controller(repository);
+        AgendaUiStateMachine stateMachine(
+            controller,
+            clock,
+            clock.value);
+        stateMachine.start();
+
+        ScriptedTouchInput touch({
+            {TouchInputError::None, {true, 120, 120}},
+            {TouchInputError::None, {true, 240, 10}},
+            {TouchInputError::ReadFailed, {true, 120, 120}}
+        });
+
+        TouchReleaseDetector releaseDetector;
+        AgendaTouchMapper touchMapper;
+        AgendaRenderer renderer;
+        CountingDrawSurface surface;
+        AgendaRuntime runtime(
+            touch,
+            releaseDetector,
+            touchMapper,
+            stateMachine,
+            renderer,
+            surface);
+
+        runtime.begin(0);
+
+        assert(runtime.update(10).touchActivity);
+        assert(!runtime.update(20).touchActivity);
+
+        const AgendaRuntimeUpdateResult failed =
+            runtime.update(30);
+
+        assert(!failed.touchActivity);
+        assert(
+            failed.touchError ==
+            TouchInputError::ReadFailed);
+    }
+
+    void test_wake_gesture_is_suppressed_through_release()
+    {
+        RuntimeStorage storage;
+        RuntimeClock clock;
+        AgendaRepository repository(storage);
+        AgendaController controller(repository);
+        AgendaUiStateMachine stateMachine(
+            controller,
+            clock,
+            clock.value);
+        stateMachine.start();
+
+        ScriptedTouchInput touch({
+            {TouchInputError::None, {true, 168, 200}},
+            {TouchInputError::ReadFailed, {false, 0, 0}},
+            {TouchInputError::None, {false, 0, 0}},
+            {TouchInputError::None, {true, 168, 200}},
+            {TouchInputError::None, {false, 0, 0}}
+        });
+
+        TouchReleaseDetector releaseDetector;
+        AgendaTouchMapper touchMapper;
+        AgendaRenderer renderer;
+        CountingDrawSurface surface;
+        AgendaRuntime runtime(
+            touch,
+            releaseDetector,
+            touchMapper,
+            stateMachine,
+            renderer,
+            surface);
+
+        runtime.begin(0);
+        runtime.suppressActionsUntilRelease();
+
+        assert(!runtime.update(10).actionHandled);
+        assert(!runtime.update(20).actionHandled);
+        assert(!runtime.update(30).actionHandled);
+        assert(!runtime.update(40).actionHandled);
+        assert(runtime.update(50).actionHandled);
+        assert(stateMachine.view().displayedMonth.month == 10);
+    }
 }
 
 int main()
 {
     test_one_release_handles_one_action_and_redraws_once();
     test_minute_tick_uses_wrap_safe_elapsed_time();
+    test_only_successful_in_bounds_touch_reports_activity();
+    test_wake_gesture_is_suppressed_through_release();
 
     std::cout
         << "All agenda runtime tests passed.\n";

@@ -1,5 +1,10 @@
 #include "touch_release_detector.h"
 
+void TouchReleaseDetector::reset()
+{
+    latestPoint_.reset();
+}
+
 std::optional<UiPoint> TouchReleaseDetector::update(
     const TouchSample &sample)
 {
