@@ -2,14 +2,16 @@
 
 #include <Arduino_GFX_Library.h>
 
-class DisplayHardware
+#include "ui/power_hardware.h"
+
+class DisplayHardware final : public BacklightControl
 {
 public:
     DisplayHardware();
 
     bool begin();
-    void enableBacklight();
-    void disableBacklight();
+    void enableBacklight() override;
+    void disableBacklight() override;
 
     Arduino_GFX& graphics();
 
