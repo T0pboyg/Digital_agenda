@@ -25,9 +25,8 @@
 namespace
 {
     constexpr std::uint32_t TouchErrorReportIntervalMilliseconds = 5000;
-    constexpr bool DeepSleepHardwareVerified = false;
-    constexpr std::uint64_t DeepSleepProbeSafetyTimerMicroseconds =
-        15000000ULL;
+    constexpr bool DeepSleepHardwareVerified = true;
+    constexpr std::uint64_t DeepSleepProbeSafetyTimerMicroseconds = 0;
 
     DisplayHardware displayHardware;
     ArduinoGfxSurface drawSurface{displayHardware.graphics()};
