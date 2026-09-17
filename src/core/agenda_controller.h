@@ -42,6 +42,14 @@ struct AgendaControllerReminderResult
     std::optional<Event> event;
 };
 
+struct AgendaControllerReminderScheduleResult
+{
+    AgendaControllerError error;
+    ReminderEngineError reminderError;
+    bool dueNow;
+    std::optional<DateTime> scheduledAt;
+};
+
 class AgendaController
 {
 public:
@@ -56,6 +64,10 @@ public:
     const AgendaManager& agenda() const;
 
     AgendaControllerReminderResult nextReminder(
+        const DateTime& now
+    ) const;
+
+    AgendaControllerReminderScheduleResult reminderSchedule(
         const DateTime& now
     ) const;
 

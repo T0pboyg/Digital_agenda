@@ -1489,6 +1489,47 @@ void test_due_reminders_advance_one_at_a_time()
     assert(storage.writeCount == 2);
 }
 
+void test_reminder_schedule_requires_ready_controller()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    const AgendaControllerReminderScheduleResult result =
+        controller.reminderSchedule(
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{10, 0}});
+
+    assert(result.error == AgendaControllerError::NotReady);
+    assert(result.reminderError == ReminderEngineError::None);
+    assert(!result.dueNow);
+    assert(!result.scheduledAt.has_value());
+}
+
+void test_controller_exposes_reminder_schedule_without_writing()
+{
+    TestByteStorage storage;
+    AgendaRepository repository(storage);
+    AgendaController controller(repository);
+
+    assert(
+        controller.start().error ==
+        AgendaControllerError::None);
+
+    const AgendaControllerReminderScheduleResult result =
+        controller.reminderSchedule(
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{10, 0}});
+
+    assert(result.error == AgendaControllerError::None);
+    assert(result.reminderError == ReminderEngineError::None);
+    assert(!result.dueNow);
+    assert(!result.scheduledAt.has_value());
+    assert(storage.writeCount == 0);
+}
+
 int main()
 {
     test_new_controller_is_not_ready();
@@ -1523,6 +1564,8 @@ int main()
     test_acknowledgement_write_failure_restores_exact_state();
     test_acknowledgement_read_failure_restores_state();
     test_due_reminders_advance_one_at_a_time();
+    test_reminder_schedule_requires_ready_controller();
+    test_controller_exposes_reminder_schedule_without_writing();
 
     std::cout
         << "All agenda controller tests passed.\n";

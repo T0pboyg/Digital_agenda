@@ -136,6 +136,32 @@ AgendaController::nextReminder(
     };
 }
 
+AgendaControllerReminderScheduleResult
+AgendaController::reminderSchedule(
+    const DateTime& now
+) const
+{
+    if (!ready_)
+    {
+        return AgendaControllerReminderScheduleResult{
+            AgendaControllerError::NotReady,
+            ReminderEngineError::None,
+            false,
+            std::nullopt
+        };
+    }
+
+    const ReminderScheduleResult result =
+        findNextReminderSchedule(agenda_, now);
+
+    return AgendaControllerReminderScheduleResult{
+        AgendaControllerError::None,
+        result.error,
+        result.dueNow,
+        result.scheduledAt
+    };
+}
+
 AgendaControllerCreateResult
 AgendaController::createEvent(
     const EventDraft& draft,

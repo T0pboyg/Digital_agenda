@@ -433,6 +433,93 @@ void test_invalid_current_date_or_time_is_rejected()
 
     assert(!invalidTime.eventId.has_value());
 }
+
+void test_schedule_returns_earliest_future_unseen_reminder()
+{
+    const AgendaManager agenda =
+        reminderAgenda({
+            reminderEvent(
+                60,
+                Date{2026, 9, 19},
+                std::nullopt),
+            reminderEvent(
+                61,
+                Date{2026, 9, 18},
+                TimeOfDay{9, 0}),
+            reminderEvent(
+                62,
+                Date{2026, 9, 17},
+                std::nullopt,
+                true)
+        }, 63);
+
+    const ReminderScheduleResult result =
+        findNextReminderSchedule(
+            agenda,
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{10, 0}});
+
+    assert(result.error == ReminderEngineError::None);
+    assert(!result.dueNow);
+    assert(result.scheduledAt.has_value());
+    assert(result.scheduledAt->date.year == 2026);
+    assert(result.scheduledAt->date.month == 9);
+    assert(result.scheduledAt->date.day == 17);
+    assert(result.scheduledAt->time.hour == 17);
+    assert(result.scheduledAt->time.minute == 0);
+}
+
+void test_schedule_reports_due_now_without_future_target()
+{
+    const AgendaManager agenda =
+        reminderAgenda({
+            reminderEvent(
+                70,
+                Date{2026, 9, 17},
+                std::nullopt)
+        }, 71);
+
+    const ReminderScheduleResult result =
+        findNextReminderSchedule(
+            agenda,
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{17, 0}});
+
+    assert(result.error == ReminderEngineError::None);
+    assert(result.dueNow);
+    assert(!result.scheduledAt.has_value());
+}
+
+void test_schedule_reports_none_and_invalid_time_explicitly()
+{
+    const AgendaManager empty;
+
+    const ReminderScheduleResult none =
+        findNextReminderSchedule(
+            empty,
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{10, 0}});
+
+    assert(none.error == ReminderEngineError::None);
+    assert(!none.dueNow);
+    assert(!none.scheduledAt.has_value());
+
+    const ReminderScheduleResult invalid =
+        findNextReminderSchedule(
+            empty,
+            DateTime{
+                Date{2026, 9, 16},
+                TimeOfDay{24, 0}});
+
+    assert(
+        invalid.error ==
+        ReminderEngineError::InvalidDateTime);
+    assert(!invalid.dueNow);
+    assert(!invalid.scheduledAt.has_value());
+}
 }
 
 int main()
@@ -450,6 +537,9 @@ int main()
     test_month_year_and_leap_boundaries();
     test_first_supported_date_uses_numeric_threshold();
     test_invalid_current_date_or_time_is_rejected();
+    test_schedule_returns_earliest_future_unseen_reminder();
+    test_schedule_reports_due_now_without_future_target();
+    test_schedule_reports_none_and_invalid_time_explicitly();
 
     std::cout
         << "All reminder engine tests passed.\n";
