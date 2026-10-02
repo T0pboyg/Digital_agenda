@@ -6,8 +6,14 @@
 #include <freertos/task.h>
 #endif
 bool Esp32AlarmAudio::setRinging(bool ringing){
-    if(!ringing){if(requested_)stop();requested_=false;return true;}
-    if(!requested_){requested_=true;failed_=!start();}
+    // A timed-out stop leaves the channel owned by the worker. Retry cleanup
+    // on later calls even after the requested ringing state has been cleared.
+    if(!ringing){stop();requested_=false;return true;}
+    if(!requested_){
+        requested_=true;
+        failed_=false;
+        if(!start()) failed_=true;
+    }
     return !failed_;
 }
 bool Esp32AlarmAudio::start(){

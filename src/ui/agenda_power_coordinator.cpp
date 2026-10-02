@@ -144,8 +144,14 @@ AgendaPowerPlan AgendaPowerCoordinator::buildSleepPlan(
             alarms_->ringing() ? AgendaPowerCoordinatorError::None : AgendaPowerCoordinatorError::AlarmScheduleFailed};
     }
 
-    const std::optional<std::uint64_t> policyWake =
+    std::optional<std::uint64_t> policyWake =
         policyTimer(policyWakeAfterMilliseconds);
+    // Even a failed clock/schedule read must retry while alarms are enabled.
+    // Otherwise an unsaved editor can enter light sleep with no wake timer.
+    if (alarms_ && std::any_of(alarms_->alarms().begin(), alarms_->alarms().end(),
+            [](const Alarm& alarm) { return alarm.enabled; }) &&
+        (!policyWake || *policyWake > 60000000ULL))
+        policyWake = 60000000ULL;
 
     const ClockReadResult current = clock_.read();
 

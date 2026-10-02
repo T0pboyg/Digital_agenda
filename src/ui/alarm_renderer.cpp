@@ -51,6 +51,13 @@ void renderDiaryStatus(const AgendaUiView&v,DrawSurface&s){
  }
 }
 bool renderAlarmUi(const AgendaUiView&v,DrawSurface&s){
+ if(v.overlay==AgendaUiOverlay::AlarmSaveError){
+   text(s,{36,70,168,24},"ΣΦΑΛΜΑ ΕΓΓΡΑΦΗΣ",UiTextStyle::Heading,AgendaUiColors::Error);
+   text(s,{36,100,168,20},"ΔΕΝ ΑΠΟΘΗΚΕΥΤΗΚΕ");
+   text(s,{36,122,168,20},"Η ΔΙΑΚΟΠΗ");
+   button(s,AlarmLayout::Stop,"ΕΠΑΝΑΛΗΨΗ",true);
+   return true;
+ }
  if(v.overlay==AgendaUiOverlay::Alarm){
    text(s,{44,50,152,26},"ΞΥΠΝΗΤΗΡΙ",UiTextStyle::Heading,AgendaUiColors::Accent);
    text(s,{42,88,156,56},v.currentTime?timeText(v.currentTime->time):"--:--",UiTextStyle::Clock);
@@ -95,6 +102,7 @@ bool renderAlarmUi(const AgendaUiView&v,DrawSurface&s){
 }
 std::optional<AgendaUiAction> mapAlarmTouch(const AgendaUiView&v,UiPoint p){
  using T=AgendaUiActionType;
+ if(v.overlay==AgendaUiOverlay::AlarmSaveError) return contains(AlarmLayout::Stop,p)?std::optional<AgendaUiAction>(action(T::RetryAlarmSave)):std::nullopt;
  if(v.overlay==AgendaUiOverlay::Alarm) return contains(AlarmLayout::Stop,p)?std::optional<AgendaUiAction>(action(T::StopAlarm)):std::nullopt;
  if(v.alarmConfirmDelete){if(contains(AlarmLayout::Yes,p))return action(T::ConfirmAlarmDelete);if(contains(AlarmLayout::No,p))return action(T::CancelAlarmDelete);return std::nullopt;}
  if(contains(AlarmLayout::Back,p))return action(T::Back);

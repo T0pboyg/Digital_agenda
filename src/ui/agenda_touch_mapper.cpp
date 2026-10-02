@@ -32,7 +32,7 @@ std::optional<AgendaUiAction> AgendaTouchMapper::map(
     std::uint32_t timestampMilliseconds) const
 {
 
-    if (view.overlay == AgendaUiOverlay::Alarm || view.screen == AgendaUiScreen::AlarmList || view.screen == AgendaUiScreen::AlarmEditor)
+    if (view.overlay == AgendaUiOverlay::Alarm || view.overlay == AgendaUiOverlay::AlarmSaveError || view.screen == AgendaUiScreen::AlarmList || view.screen == AgendaUiScreen::AlarmEditor)
         return mapAlarmTouch(view, releasePoint);
     if (view.alarmFeature && view.screen == AgendaUiScreen::Month && view.overlay == AgendaUiOverlay::None && containsPoint(AlarmLayout::Open, releasePoint))
         return makeAction(AgendaUiActionType::OpenAlarms);

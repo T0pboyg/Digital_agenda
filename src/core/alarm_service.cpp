@@ -74,6 +74,11 @@ bool AlarmService::save(Alarm a,const DateTime& now) {
     // Enabling/creating/editing a daily time which has passed schedules tomorrow.
     a.pending=false;
     a.lastFiredDay=(a.daily && minute(a.time)<=minute(now.time))?serialDay(now.date):-1;
+    // An unchanged daily schedule keeps its acknowledgment through a repeated
+    // DST hour (or a backwards clock correction). A changed time is a new schedule.
+    if(it!=next.end() && it->daily && a.daily &&
+       minute(it->time)==minute(a.time))
+        a.lastFiredDay=std::max(a.lastFiredDay,it->lastFiredDay);
     if(!a.id) {
         if(next.size()>=MaxAlarms) {error_=AlarmError::Full; return false;}
         std::uint32_t id=1;
@@ -101,13 +106,19 @@ void AlarmService::poll(const DateTime& now) {
     for(auto& a:alarms_) if(due(a,now)) {a.pending=true; a.lastFiredDay=serialDay(now.date); changed=true;}
     if(changed || dirty_) dirty_=!write(alarms_);
 }
-bool AlarmService::stop(const DateTime& now) {
-    if(!ready_ || !valid(now)) return false;
-    // Include alarms that became due during the current ringing interval.
-    poll(now);
+bool AlarmService::stop(std::optional<DateTime> now) {
+    if(!ready_) return false;
+    // A failed clock must never prevent stopping an already active alarm.
+    // Include newly due alarms only when a trustworthy current time is available.
+    if(now && valid(*now)) poll(*now);
     bool changed=false;
     for(auto& a:alarms_) if(a.pending) {a.pending=false; if(!a.daily) a.enabled=false; changed=true;}
     if(changed || dirty_) dirty_=!write(alarms_);
+    return !dirty_;
+}
+bool AlarmService::retryPendingSave() {
+    if(!ready_) return false;
+    if(dirty_) dirty_=!write(alarms_);
     return !dirty_;
 }
 std::optional<DateTime> AlarmService::nextWake(const DateTime& now) const {

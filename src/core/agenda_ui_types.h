@@ -38,7 +38,8 @@ enum class AgendaUiOverlay
     ConfirmDiscard,
     OperationError,
     ClockError,
-    Alarm
+    Alarm,
+    AlarmSaveError
 };
 
 enum class AgendaUiEditorMode
@@ -99,7 +100,7 @@ enum class AgendaUiActionType
     CancelDelete,
     AcknowledgeReminder,
     OpenAlarms, CreateAlarm, SelectAlarm, ToggleAlarm, SaveAlarm, DeleteAlarm,
-    ConfirmAlarmDelete, CancelAlarmDelete, StopAlarm, RetryAlarms,
+    ConfirmAlarmDelete, CancelAlarmDelete, StopAlarm, RetryAlarms, RetryAlarmSave,
     AlarmPreviousPage, AlarmNextPage, AlarmPreviousDay, AlarmNextDay,
     AlarmPreviousHour, AlarmNextHour, AlarmPreviousMinute, AlarmNextMinute,
     AlarmToggleDaily, AlarmToggleEnabled

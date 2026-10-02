@@ -20,21 +20,25 @@
 ### Task 1: Alarm persistence, scheduling and battery model
 Files: src/core/alarm_service.{h,cpp}, battery_status.{h,cpp}; tests/test_alarm_service.cpp, test_battery_status.cpp; tools/run_host_tests.py.
 Interfaces: AlarmService(ByteStorage&), load(), save(Alarm, DateTime), remove(id), poll(now), stop(now), nextWake(now), alarms(), ringing(), error(). batteryPercent(millivolts).
-- [ ] Write tests for persistence/CRC, daily/one-time/simultaneous alarms, stop/reboot, failed writes, date limits; run to see missing API failure.
-- [ ] Implement typed error, validated versioned encoding, pending flags and scheduling, voltage interpolation.
-- [ ] Run targeted tests and baseline suite; commit.
+- [x] Write tests for persistence/CRC, daily/one-time/simultaneous alarms, stop/reboot, failed writes, date limits; run to see missing API failure.
+- [x] Implement typed error, validated versioned encoding, pending flags and scheduling, voltage interpolation.
+- [x] Run targeted tests and baseline suite; commit.
 
 ### Task 2: Alarm screens, status and power integration
 Files: core/agenda_ui_*; ui/alarm_ui.{h,cpp}, alarm_renderer.{h,cpp}, agenda_renderer.cpp, agenda_touch_mapper.cpp, agenda_runtime.*, agenda_power_coordinator.*, agenda_power_manager.cpp, ui_geometry.h.
 Interfaces: optional AlarmService* in state/power constructors; state fast tick interval only when alarms attached. AlarmUi encapsulates drafts, paging, actions. view carries alarm UI, now and optional battery.
-- [ ] Write tests for UI add/edit/delete/toggle, ringing-only stop, editor preservation, earliest wake, disabled alarms and errors; run red.
-- [ ] Implement integrated UI and wake scheduling; keep no-service API behavior for baseline tests.
-- [ ] Run host suite and commit.
+- [x] Write tests for UI add/edit/delete/toggle, ringing-only stop, editor preservation, earliest wake, disabled alarms and errors; run red.
+- [x] Implement integrated UI and wake scheduling; keep no-service API behavior for baseline tests.
+- [x] Run host suite and commit.
 
 ### Task 3: ESP32 adapters, integration and delivery
 Files: platform/esp32/battery_hardware.*, alarm_audio.*, board_pins.h, main.cpp; docs/ALARM_BATTERY.md.
-- [ ] Test portable PCM generator and ADC conversion; run red.
-- [ ] Implement 16kHz stereo duplicated tone melody, bounded I2S writes, stop/deinit, ADC averaging and setup/loop/wake hooks.
-- [ ] Build host suite and attempt pinned PlatformIO firmware build; document any unavailable hardware/toolchain checks.
-- [ ] Fresh whole-branch code review, fix important findings with regression tests.
-- [ ] Commit and deliver git bundle + source archive + Greek install/test instructions without flashing user hardware.
+- [x] Test portable PCM generator and ADC conversion; run red.
+- [x] Implement 16kHz stereo duplicated tone melody, bounded I2S writes, stop/deinit, ADC averaging and setup/loop/wake hooks.
+- [x] Build host suite and attempt pinned PlatformIO firmware build; document any unavailable hardware/toolchain checks.
+- [x] Fresh whole-branch code review, fix important findings with regression tests.
+- [x] Commit and deliver git bundle + source archive + Greek install/test instructions without flashing user hardware.
+
+## Completion evidence
+
+36 host test executables passed. Fresh code review findings fixed with regression tests. Firmware compilation was attempted but toolchain installation unavailable; physical device tests and Windows PlatformIO build remain explicit delivery gates. See docs/ALARM_BATTERY.md.

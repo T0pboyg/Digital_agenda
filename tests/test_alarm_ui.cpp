@@ -4,7 +4,7 @@
 #include "ui/agenda_touch_mapper.h"
 #include "ui/agenda_power_coordinator.h"
 class Mem final:public ByteStorage{public: mutable std::vector<std::uint8_t>b; ByteReadResult read()const override{return {b.empty()?ByteStorageError::NotFound:ByteStorageError::None,b};} ByteStorageError write(const std::vector<std::uint8_t>&v)const override{b=v;return ByteStorageError::None;}};
-class TestClock final:public Clock,public WakeDelayClock {public: DateTime now{{2026,10,2},{8,0}}; ClockReadResult read()const override{return {ClockError::None,now};} ClockError set(const DateTime&v)override{now=v;return ClockError::None;} WakeDelayResult delayUntil(const DateTime&v)const override {const auto d=serialMinute(v)-serialMinute(now);return {ClockError::None,d<=0,d<=0?0ULL:static_cast<std::uint64_t>(d)*60000000ULL};}};
+class TestClock final:public Clock,public WakeDelayClock {public: bool failRead=false; DateTime now{{2026,10,2},{8,0}}; ClockReadResult read()const override{return {failRead?ClockError::ReadFailed:ClockError::None,now};} ClockError set(const DateTime&v)override{now=v;return ClockError::None;} WakeDelayResult delayUntil(const DateTime&v)const override {const auto d=serialMinute(v)-serialMinute(now);return {ClockError::None,d<=0,d<=0?0ULL:static_cast<std::uint64_t>(d)*60000000ULL};}};
 int main(){
  Mem p,b,a; AgendaRepository repo(p,b); AgendaController c(repo); TestClock clock; AlarmService alarms(a); assert(alarms.load());
  AgendaUiStateMachine ui(c,clock,clock.now,&alarms); ui.start();
@@ -21,7 +21,8 @@ int main(){
  assert(!mapper.map(ui.view(),{50,80},0));
  auto stop=mapper.map(ui.view(),{120,170},0);assert(stop && stop->type==AgendaUiActionType::StopAlarm);
  ui.handle({AgendaUiActionType::Back});assert(ui.view().overlay==AgendaUiOverlay::Alarm);
- ui.handle(*stop);assert(ui.view().overlay==AgendaUiOverlay::None);assert(ui.view().screen==original);
+ clock.failRead=true;ui.tick();assert(!ui.view().currentTime);
+ ui.handle(*stop);assert(ui.view().overlay==AgendaUiOverlay::None);clock.failRead=false;assert(ui.view().screen==original);
  // Alarm deadline participates in earliest wake planning.
  AgendaPowerManager manager; AgendaPowerCoordinator power(manager,c,clock,clock,&alarms);
  Alarm one;one.daily=false;one.date=clock.now.date;one.time={8,2};assert(alarms.save(one,clock.now));

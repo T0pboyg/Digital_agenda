@@ -25,11 +25,13 @@ public:
     bool save(Alarm alarm, const DateTime& now);
     bool remove(std::uint32_t id);
     void poll(const DateTime& now);
-    bool stop(const DateTime& now);
+    bool stop(std::optional<DateTime> now = std::nullopt);
     std::optional<DateTime> nextWake(const DateTime& now) const;
     const std::vector<Alarm>& alarms() const { return alarms_; }
     bool ringing() const;
     bool ready() const { return ready_; }
+    bool hasPendingSave() const { return dirty_; }
+    bool retryPendingSave();
     bool canSleep() const { return ready_ && !dirty_ && !ringing(); }
     AlarmError error() const { return error_; }
 private:

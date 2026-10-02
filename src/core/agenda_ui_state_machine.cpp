@@ -300,7 +300,7 @@ void AgendaUiStateMachine::checkReminder()
 
 void AgendaUiStateMachine::tick()
 {
-    if (alarms_ && screen_ != AgendaUiScreen::ClockSetup && screen_ != AgendaUiScreen::StartupError)
+    if (alarms_)
     {
         const auto current = clock_.read();
         if (current.error == ClockError::None && validDateTime(current.value))
@@ -326,7 +326,13 @@ void AgendaUiStateMachine::handle(
         if (validNow) lastNow_ = current.value;
         if (alarms_->ringing())
         {
-            if (action.type == AgendaUiActionType::StopAlarm && validNow) alarms_->stop(current.value);
+            if (action.type == AgendaUiActionType::StopAlarm)
+                alarms_->stop(validNow ? std::optional<DateTime>(current.value) : std::nullopt);
+            return;
+        }
+        if (alarms_->hasPendingSave())
+        {
+            if (action.type == AgendaUiActionType::RetryAlarmSave) alarms_->retryPendingSave();
             return;
         }
         const bool allowOpen = overlay_ == AgendaUiOverlay::None &&
@@ -1186,6 +1192,7 @@ AgendaUiView AgendaUiStateMachine::view() const
         result.currentTime = lastNow_;
     alarmUi_.populate(result);
     if (alarms_ && alarms_->ringing()) result.overlay = AgendaUiOverlay::Alarm;
+    else if (alarms_ && alarms_->hasPendingSave()) result.overlay = AgendaUiOverlay::AlarmSaveError;
 
     if (!controller_.isReady())
     {
