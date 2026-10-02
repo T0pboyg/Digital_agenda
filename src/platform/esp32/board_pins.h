@@ -4,6 +4,10 @@
 
 namespace Esp32Board
 {
+    constexpr std::int8_t BatteryAdc = 1;
+    constexpr std::int8_t AlarmBclk = 15;
+    constexpr std::int8_t AlarmLrclk = 16;
+    constexpr std::int8_t AlarmData = 17;
     constexpr std::int8_t LcdBacklight = 2;
     constexpr std::int8_t LcdDataCommand = 8;
     constexpr std::int8_t LcdChipSelect = 9;

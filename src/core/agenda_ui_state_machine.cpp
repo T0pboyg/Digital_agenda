@@ -140,9 +140,12 @@ bool isEditorScreen(
 AgendaUiStateMachine::AgendaUiStateMachine(
     AgendaController& controller,
     Clock& clock,
-    const DateTime& clockSetupDefault
+    const DateTime& clockSetupDefault,
+    AlarmService* alarms
 )
-    : controller_(controller),
+    : alarms_(alarms),
+      alarmUi_(alarms),
+      controller_(controller),
       clock_(clock),
       screen_(AgendaUiScreen::StartupError),
       overlay_(AgendaUiOverlay::None),
@@ -176,6 +179,7 @@ AgendaUiStateMachine::AgendaUiStateMachine(
 void AgendaUiStateMachine::start()
 {
     startOrRetry();
+    if (alarms_) tick();
 }
 
 void AgendaUiStateMachine::startOrRetry()
@@ -230,7 +234,8 @@ void AgendaUiStateMachine::checkReminder()
     if (
         !controller_.isReady() ||
         overlay_ != AgendaUiOverlay::None ||
-        isEditorScreen(screen_)
+        isEditorScreen(screen_) ||
+        alarmUi_.active() || (alarms_ && alarms_->ringing())
     )
     {
         return;
@@ -295,6 +300,17 @@ void AgendaUiStateMachine::checkReminder()
 
 void AgendaUiStateMachine::tick()
 {
+    if (alarms_ && screen_ != AgendaUiScreen::ClockSetup && screen_ != AgendaUiScreen::StartupError)
+    {
+        const auto current = clock_.read();
+        if (current.error == ClockError::None && validDateTime(current.value))
+        {
+            lastNow_ = current.value;
+            clockError_ = ClockError::None;
+            alarms_->poll(current.value);
+        }
+        else clockError_ = current.error == ClockError::None ? ClockError::InvalidDateTime : current.error;
+    }
     checkReminder();
 }
 
@@ -303,6 +319,21 @@ void AgendaUiStateMachine::handle(
     const AgendaUiAction& action
 )
 {
+    if (alarms_)
+    {
+        const auto current = clock_.read();
+        const bool validNow = current.error == ClockError::None && validDateTime(current.value);
+        if (validNow) lastNow_ = current.value;
+        if (alarms_->ringing())
+        {
+            if (action.type == AgendaUiActionType::StopAlarm && validNow) alarms_->stop(current.value);
+            return;
+        }
+        const bool allowOpen = overlay_ == AgendaUiOverlay::None &&
+            (screen_ == AgendaUiScreen::Month || screen_ == AgendaUiScreen::Day || screen_ == AgendaUiScreen::EventDetails);
+        if (alarmUi_.handle(action, validNow ? std::optional<DateTime>(current.value) : std::nullopt, allowOpen)) return;
+    }
+
     if (
         action.type ==
             AgendaUiActionType::RetryStartup &&
@@ -1149,6 +1180,12 @@ AgendaUiView AgendaUiStateMachine::view() const
     result.t9Mode = t9_.mode();
     result.t9Uppercase = t9_.uppercase();
     result.reminder = reminder_;
+    result.alarmFeature = alarms_ != nullptr;
+    result.batteryPercent = batteryPercent_;
+    if (screen_ != AgendaUiScreen::ClockSetup && screen_ != AgendaUiScreen::StartupError && clockError_ == ClockError::None)
+        result.currentTime = lastNow_;
+    alarmUi_.populate(result);
+    if (alarms_ && alarms_->ringing()) result.overlay = AgendaUiOverlay::Alarm;
 
     if (!controller_.isReady())
     {

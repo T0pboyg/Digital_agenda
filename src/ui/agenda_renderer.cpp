@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "agenda_renderer.h"
+#include "alarm_renderer.h"
 #include "core/utf8.h"
 
 namespace
@@ -574,7 +575,7 @@ namespace
                     view.dayPageCount);
 
             surface.drawText(
-                AgendaUiLayout::FooterCenter,
+                view.alarmFeature ? UiRect{88, 190, 64, 22} : AgendaUiLayout::FooterCenter,
                 pageText,
                 UiTextStyle::Body,
                 AgendaUiColors::SecondaryText,
@@ -1335,6 +1336,8 @@ void AgendaRenderer::render(
     surface.clear(
         AgendaUiColors::Background);
 
+    if (renderAlarmUi(view, surface)) return;
+
     switch (view.screen)
     {
     case AgendaUiScreen::ClockSetup:
@@ -1397,6 +1400,7 @@ void AgendaRenderer::render(
         break;
     }
 
+    renderDiaryStatus(view, surface);
     renderOverlay(
         view,
         surface);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "agenda_ui_types.h"
+#include "alarm_ui_controller.h"
 
 class AgendaUiStateMachine
 {
@@ -8,7 +9,8 @@ public:
     AgendaUiStateMachine(
         AgendaController& controller,
         Clock& clock,
-        const DateTime& clockSetupDefault
+        const DateTime& clockSetupDefault,
+        AlarmService* alarms = nullptr
     );
 
     void start();
@@ -19,6 +21,9 @@ public:
     );
 
     AgendaUiView view() const;
+    bool hasAlarms() const { return alarms_ != nullptr; }
+    void setBatteryPercent(std::optional<int> value) { batteryPercent_ = value; }
+
 
 private:
     void startOrRetry();
@@ -41,6 +46,9 @@ private:
     void confirmDelete();
     void checkReminder();
 
+    AlarmService* alarms_;
+    AlarmUiController alarmUi_;
+    std::optional<int> batteryPercent_;
     AgendaController& controller_;
     Clock& clock_;
 

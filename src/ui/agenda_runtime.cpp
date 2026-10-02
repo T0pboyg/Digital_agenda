@@ -114,12 +114,17 @@ AgendaRuntimeUpdateResult AgendaRuntime::update(
         intervalElapsed(
             nowMilliseconds,
             lastTickMilliseconds_,
-            UiTickIntervalMilliseconds))
+            stateMachine_.hasAlarms() ? 1000 : UiTickIntervalMilliseconds))
     {
         lastTickMilliseconds_ = nowMilliseconds;
+        const auto before = stateMachine_.view();
         stateMachine_.tick();
+        const auto after = stateMachine_.view();
         result.ticked = true;
-        renderRequired = true;
+        const bool timeChanged = before.currentTime.has_value() != after.currentTime.has_value() ||
+            (before.currentTime && after.currentTime && serialMinute(*before.currentTime) != serialMinute(*after.currentTime));
+        renderRequired = renderRequired || !stateMachine_.hasAlarms() || timeChanged ||
+            before.overlay != after.overlay || before.alarmError != after.alarmError;
     }
 
     if (renderRequired)

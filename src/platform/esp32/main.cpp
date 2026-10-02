@@ -6,6 +6,9 @@
 #include <string_view>
 
 #include "arduino_gfx_surface.h"
+#include "alarm_audio.h"
+#include "battery_hardware.h"
+#include "core/alarm_service.h"
 #include "core/agenda_controller.h"
 #include "core/agenda_repository.h"
 #include "core/agenda_ui_state_machine.h"
@@ -33,6 +36,12 @@ namespace
     Cst816sTouchHardware touchHardware;
     Esp32PowerHardware powerHardware;
     Esp32Clock clock;
+    Esp32BatteryHardware batteryHardware;
+    Esp32AlarmAudio alarmAudio;
+    LittleFsByteStorage alarmStorage{std::string{"/alarms.bin"}};
+    AlarmService alarms(alarmStorage);
+    std::uint32_t lastBatterySample = 0;
+    bool audioFailureReported = false;
 
     LittleFsByteStorage primaryStorage{std::string{"/agenda.bin"}};
     LittleFsByteStorage backupStorage{std::string{"/agenda.backup.bin"}};
@@ -45,7 +54,8 @@ namespace
     AgendaUiStateMachine stateMachine(
         controller,
         clock,
-        clockSetupDefault);
+        clockSetupDefault,
+        &alarms);
 
     AgendaRenderer renderer;
     AgendaTouchMapper touchMapper;
@@ -63,7 +73,8 @@ namespace
         powerManager,
         controller,
         clock,
-        clock);
+        clock,
+        &alarms);
 
     bool runtimeReady = false;
     bool touchReadFailureActive = false;
@@ -153,6 +164,9 @@ namespace
             return;
         case AgendaPowerCoordinatorError::ReminderScheduleFailed:
             Serial.println("REMINDER_SCHEDULE_FAILED");
+            return;
+        case AgendaPowerCoordinatorError::AlarmScheduleFailed:
+            Serial.println("ALARM_STORAGE_ERROR");
             return;
         case AgendaPowerCoordinatorError::WakeDelayFailed:
             Serial.println("WAKE_DELAY_FAILED");
@@ -246,8 +260,8 @@ namespace
             stateMachine.tick();
 
             if (
-                stateMachine.view().overlay ==
-                AgendaUiOverlay::Reminder)
+                (stateMachine.view().overlay == AgendaUiOverlay::Reminder ||
+                 stateMachine.view().overlay == AgendaUiOverlay::Alarm))
             {
                 powerCoordinator.recordActivity(nowMilliseconds);
                 showCurrentView();
@@ -277,6 +291,7 @@ namespace
         const std::optional<std::uint64_t> timer =
             timerForSleep(mode, plan.timerMicroseconds);
 
+        alarmAudio.stop();
         displayHardware.disableBacklight();
 
         const PowerHardwareError prepared =
@@ -366,8 +381,8 @@ namespace
             stateMachine.tick();
 
             if (
-                stateMachine.view().overlay ==
-                AgendaUiOverlay::Reminder)
+                (stateMachine.view().overlay == AgendaUiOverlay::Reminder ||
+                 stateMachine.view().overlay == AgendaUiOverlay::Alarm))
             {
                 powerCoordinator.recordActivity(nowMilliseconds);
                 showCurrentView();
@@ -434,6 +449,9 @@ void setup()
         return;
     }
 
+    if (!alarmStorage.begin() || !alarms.load()) Serial.println("ALARM_STORAGE_ERROR");
+    batteryHardware.begin();
+    stateMachine.setBatteryPercent(batteryHardware.sample());
     stateMachine.start();
 
     const std::uint32_t nowMilliseconds =
@@ -462,6 +480,18 @@ void loop()
         runtime.update(nowMilliseconds);
 
     reportTouchReadStatus(result, nowMilliseconds);
+
+    if (static_cast<std::uint32_t>(nowMilliseconds - lastBatterySample) >= 30000)
+    {
+        lastBatterySample = nowMilliseconds;
+        const auto before = stateMachine.view().batteryPercent;
+        stateMachine.setBatteryPercent(batteryHardware.sample());
+        if (before != stateMachine.view().batteryPercent) renderCurrentView();
+    }
+    const bool audioOk = alarmAudio.setRinging(alarms.ringing());
+    if (!audioOk && !audioFailureReported) Serial.println("ALARM_AUDIO_FAILED");
+    audioFailureReported = !audioOk;
+    if (alarms.ringing()) displayHardware.enableBacklight();
 
     const AgendaPowerPlan plan =
         powerCoordinator.update(

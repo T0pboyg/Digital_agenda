@@ -20,9 +20,9 @@ namespace
             color);
     }
 
-    std::uint8_t textScale(UiTextStyle)
+    std::uint8_t textScale(UiTextStyle style)
     {
-        return 1;
+        return style == UiTextStyle::Clock ? 3 : 1;
     }
 }
 

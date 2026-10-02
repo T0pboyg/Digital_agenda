@@ -59,9 +59,11 @@ AgendaPowerCoordinator::AgendaPowerCoordinator(
     AgendaPowerManager& manager,
     AgendaController& controller,
     Clock& clock,
-    WakeDelayClock& wakeDelayClock
+    WakeDelayClock& wakeDelayClock,
+    AlarmService* alarms
 )
-    : manager_(manager),
+    : alarms_(alarms),
+      manager_(manager),
       controller_(controller),
       clock_(clock),
       wakeDelayClock_(wakeDelayClock)
@@ -136,6 +138,12 @@ AgendaPowerPlan AgendaPowerCoordinator::buildSleepPlan(
         policyWakeAfterMilliseconds
 ) const
 {
+    if (alarms_ && !alarms_->canSleep())
+    {
+        return {AgendaSleepMode::None, std::nullopt, alarms_->ringing(),
+            alarms_->ringing() ? AgendaPowerCoordinatorError::None : AgendaPowerCoordinatorError::AlarmScheduleFailed};
+    }
+
     const std::optional<std::uint64_t> policyWake =
         policyTimer(policyWakeAfterMilliseconds);
 
@@ -175,11 +183,20 @@ AgendaPowerPlan AgendaPowerCoordinator::buildSleepPlan(
 
     std::optional<std::uint64_t> wake = policyWake;
 
-    if (schedule.scheduledAt.has_value())
+    std::optional<DateTime> target = schedule.scheduledAt;
+    if (alarms_)
+    {
+        const auto alarmTarget = alarms_->nextWake(current.value);
+        if (alarmTarget && (!target || serialMinute(*alarmTarget) < serialMinute(*target))) target = alarmTarget;
+        // Re-evaluate civil-time schedules across DST, including a skipped hour.
+        if (alarmTarget && (!wake || *wake > 60000000ULL)) wake = 60000000ULL;
+    }
+
+    if (target.has_value())
     {
         const WakeDelayResult delay =
             wakeDelayClock_.delayUntil(
-                *schedule.scheduledAt);
+                *target);
 
         if (delay.error != ClockError::None)
         {

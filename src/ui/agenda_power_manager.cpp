@@ -38,7 +38,8 @@ AgendaPowerDecision AgendaPowerManager::decide(
 {
     if (
         !started_ ||
-        view.overlay == AgendaUiOverlay::Reminder
+        view.overlay == AgendaUiOverlay::Reminder ||
+        view.overlay == AgendaUiOverlay::Alarm
     )
     {
         return AgendaPowerDecision{

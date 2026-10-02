@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "agenda_controller.h"
+#include "alarm_service.h"
 #include "calendar_engine.h"
 #include "clock.h"
 #include "t9_engine.h"
@@ -24,7 +25,9 @@ enum class AgendaUiScreen
     EditorTime,
     EditorText,
     EditorReview,
-    StartupError
+    StartupError,
+    AlarmList,
+    AlarmEditor
 };
 
 enum class AgendaUiOverlay
@@ -34,7 +37,8 @@ enum class AgendaUiOverlay
     ConfirmDelete,
     ConfirmDiscard,
     OperationError,
-    ClockError
+    ClockError,
+    Alarm
 };
 
 enum class AgendaUiEditorMode
@@ -93,7 +97,12 @@ enum class AgendaUiActionType
     RequestDelete,
     ConfirmDelete,
     CancelDelete,
-    AcknowledgeReminder
+    AcknowledgeReminder,
+    OpenAlarms, CreateAlarm, SelectAlarm, ToggleAlarm, SaveAlarm, DeleteAlarm,
+    ConfirmAlarmDelete, CancelAlarmDelete, StopAlarm, RetryAlarms,
+    AlarmPreviousPage, AlarmNextPage, AlarmPreviousDay, AlarmNextDay,
+    AlarmPreviousHour, AlarmNextHour, AlarmPreviousMinute, AlarmNextMinute,
+    AlarmToggleDaily, AlarmToggleEnabled
 };
 
 struct AgendaUiAction
@@ -137,6 +146,16 @@ struct AgendaUiEditorDraft
 
 struct AgendaUiView
 {
+    bool alarmFeature = false;
+    std::optional<DateTime> currentTime;
+    std::optional<int> batteryPercent;
+    std::vector<Alarm> alarms;
+    Alarm alarmDraft;
+    std::size_t alarmPage = 0;
+    std::size_t alarmPageCount = 0;
+    bool alarmConfirmDelete = false;
+    AlarmError alarmError = AlarmError::None;
+
     AgendaUiScreen screen =
         AgendaUiScreen::StartupError;
 

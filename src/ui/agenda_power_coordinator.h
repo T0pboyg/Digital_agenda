@@ -19,7 +19,8 @@ enum class AgendaPowerCoordinatorError
     None,
     ClockReadFailed,
     ReminderScheduleFailed,
-    WakeDelayFailed
+    WakeDelayFailed,
+    AlarmScheduleFailed
 };
 
 struct AgendaPowerPlan
@@ -37,7 +38,8 @@ public:
         AgendaPowerManager& manager,
         AgendaController& controller,
         Clock& clock,
-        WakeDelayClock& wakeDelayClock
+        WakeDelayClock& wakeDelayClock,
+        AlarmService* alarms = nullptr
     );
 
     void begin(
@@ -65,6 +67,7 @@ private:
             policyWakeAfterMilliseconds
     ) const;
 
+    AlarmService* alarms_;
     AgendaPowerManager& manager_;
     AgendaController& controller_;
     Clock& clock_;

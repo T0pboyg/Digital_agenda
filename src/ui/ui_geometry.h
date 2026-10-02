@@ -63,7 +63,8 @@ enum class UiTextStyle
     Heading,
     Body,
     Caption,
-    Keypad
+    Keypad,
+    Clock
 };
 
 enum class UiTextAlignment
