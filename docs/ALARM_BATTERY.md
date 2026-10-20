@@ -126,3 +126,24 @@ python tools/run_host_tests.py
 - Waveshare, πλακέτα και μέτρηση μπαταρίας: https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.28
 - Waveshare, σχηματικό Rev3: https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.28/ESP32-S3-Touch-LCD-1.28-Sch.pdf
 - Espressif, I2S: https://docs.espressif.com/projects/arduino-esp32/en/latest/api/i2s.html
+
+## Alarm names (2026-10-20)
+
+The alarm editor's ΟΝΟΜΑ button opens the existing Greek/English T9 keypad.
+Names are optional, limited to 30 Unicode code points, and support numeric mode.
+OK accepts the name into the draft; ΠΙΣΩ cancels that name edit. Save the alarm
+with the editor's OK. Names appear in the list (shortened when necessary), and
+in full on two lines when ringing. Empty names display Ξυπνητήρι. Simultaneous
+alarms show the first name plus a count of additional alarms; Stop still
+acknowledges the whole batch.
+
+Storage writes version 2 with UTF-8 names and continues reading version 1.
+Existing IDs, enabled state, schedules, pending occurrences and acknowledged
+dates are retained. The file is upgraded on the next successful write.
+The old firmware cannot read version 2, so do not downgrade after migration.
+The agenda storage format and flash partition layout are unchanged. Use normal
+firmware upload; do not run uploadfs or erase flash.
+
+Validation: host tests cover names through T9, cancel/backspace/length limit,
+UTF-8 persistence, old pending-alarm migration, malformed records and full
+ringing-label rendering. Check actual 240px display and upload on the device.

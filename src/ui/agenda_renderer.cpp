@@ -995,7 +995,7 @@ namespace
     {
         surface.drawText(
             AgendaUiLayout::Header,
-            "ΚΕΙΜΕΝΟ",
+            view.alarmNameEditor ? "ΟΝΟΜΑ" : "ΚΕΙΜΕΝΟ",
             UiTextStyle::Title,
             AgendaUiColors::PrimaryText,
             UiTextAlignment::Center);
@@ -1005,6 +1005,13 @@ namespace
             8,
             AgendaUiColors::Surface);
 
+        if (view.alarmNameEditor) {
+            const auto first = utf8Prefix(view.editor.text, 15);
+            surface.drawText({44,36,152,18}, first, UiTextStyle::Body,
+                AgendaUiColors::PrimaryText, UiTextAlignment::Left);
+            surface.drawText({44,55,152,18}, view.editor.text.substr(first.size()), UiTextStyle::Body,
+                AgendaUiColors::PrimaryText, UiTextAlignment::Left);
+        } else {
         surface.drawText(
             AgendaUiLayout::T9Preview,
             utf8Prefix(
@@ -1013,6 +1020,8 @@ namespace
             UiTextStyle::Body,
             AgendaUiColors::PrimaryText,
             UiTextAlignment::Left);
+
+        }
 
         const UiRect languageBounds{
             AgendaUiLayout::T9Status.x,
@@ -1096,7 +1105,7 @@ namespace
 
         surface.drawText(
             AgendaUiLayout::FooterRight,
-            "ΕΠΟΜΕΝΟ",
+            view.alarmNameEditor ? "OK" : "ΕΠΟΜΕΝΟ",
             UiTextStyle::Caption,
             AgendaUiColors::Accent,
             UiTextAlignment::Center);

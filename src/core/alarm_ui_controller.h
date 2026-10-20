@@ -7,7 +7,8 @@ public:
     bool handle(const AgendaUiAction& action, const std::optional<DateTime>& now, bool allowOpen);
     void populate(AgendaUiView& view) const;
 private:
-    enum class Page {Closed,List,Editor};
+    enum class Page {Closed,List,Editor,Name};
+    T9Engine nameInput_;
     void clampPage();
     AlarmService* alarms_;
     Page page_=Page::Closed;

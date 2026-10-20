@@ -103,7 +103,7 @@ enum class AgendaUiActionType
     ConfirmAlarmDelete, CancelAlarmDelete, StopAlarm, RetryAlarms, RetryAlarmSave,
     AlarmPreviousPage, AlarmNextPage, AlarmPreviousDay, AlarmNextDay,
     AlarmPreviousHour, AlarmNextHour, AlarmPreviousMinute, AlarmNextMinute,
-    AlarmToggleDaily, AlarmToggleEnabled
+    AlarmToggleDaily, AlarmToggleEnabled, EditAlarmName
 };
 
 struct AgendaUiAction
@@ -152,6 +152,8 @@ struct AgendaUiView
     std::optional<int> batteryPercent;
     std::vector<Alarm> alarms;
     Alarm alarmDraft;
+    bool alarmNameEditor = false;
+    std::vector<std::string> ringingAlarmNames;
     std::size_t alarmPage = 0;
     std::size_t alarmPageCount = 0;
     bool alarmConfirmDelete = false;

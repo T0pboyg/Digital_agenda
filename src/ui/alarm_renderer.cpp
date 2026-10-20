@@ -1,6 +1,7 @@
 #include "alarm_renderer.h"
 #include <cstdio>
 #include <algorithm>
+#include "core/utf8.h"
 namespace {
 std::string timeText(TimeOfDay t){char b[16];std::snprintf(b,sizeof b,"%02d:%02d",t.hour,t.minute);return b;}
 std::string dateText(Date d){char b[24];std::snprintf(b,sizeof b,"%02d/%02d/%04d",d.day,d.month,d.year);return b;}
@@ -59,8 +60,13 @@ bool renderAlarmUi(const AgendaUiView&v,DrawSurface&s){
    return true;
  }
  if(v.overlay==AgendaUiOverlay::Alarm){
-   text(s,{44,50,152,26},"ΞΥΠΝΗΤΗΡΙ",UiTextStyle::Heading,AgendaUiColors::Accent);
-   text(s,{42,88,156,56},v.currentTime?timeText(v.currentTime->time):"--:--",UiTextStyle::Clock);
+   text(s,{44,30,152,24},"ΞΥΠΝΗΤΗΡΙ",UiTextStyle::Heading,AgendaUiColors::Accent);
+   const std::string name=v.ringingAlarmNames.empty()?"Ξυπνητήρι":v.ringingAlarmNames.front();
+   const auto first=utf8Prefix(name,15);
+   text(s,{40,57,160,20},first);
+   text(s,{40,78,160,20},name.substr(first.size()));
+   if(v.ringingAlarmNames.size()>1) text(s,{76,202,88,18},"+"+std::to_string(v.ringingAlarmNames.size()-1),UiTextStyle::Caption);
+   text(s,{42,100,156,48},v.currentTime?timeText(v.currentTime->time):"--:--",UiTextStyle::Clock);
    button(s,AlarmLayout::Stop,"Διακοπή",true);
    return true;
  }
@@ -70,7 +76,7 @@ bool renderAlarmUi(const AgendaUiView&v,DrawSurface&s){
    text(s,{42,90,156,32},"ΔΙΑΓΡΑΦΗ;",UiTextStyle::Heading);
    button(s,AlarmLayout::Yes,"ΝΑΙ",true);button(s,AlarmLayout::No,"ΟΧΙ");return true;
  }
- text(s,{36,43,168,16},errorText(v.alarmError),UiTextStyle::Caption,AgendaUiColors::Error);
+ if(v.screen==AgendaUiScreen::AlarmList) text(s,{36,43,168,16},errorText(v.alarmError),UiTextStyle::Caption,AgendaUiColors::Error);
  if(v.screen==AgendaUiScreen::AlarmList){
    button(s,AlarmLayout::Add,"+",true);
    if(v.alarms.empty()){
@@ -81,15 +87,18 @@ bool renderAlarmUi(const AgendaUiView&v,DrawSurface&s){
    for(std::size_t i=0;i<v.alarms.size();++i){
      const auto&a=v.alarms[i];int y=62+40*static_cast<int>(i);
      s.fillRoundedRectangle({30,y,180,36},6,AgendaUiColors::Surface);
-     text(s,{38,y,52,36},timeText(a.time),UiTextStyle::Body,a.enabled?AgendaUiColors::Accent:AgendaUiColors::Disabled);
+     text(s,{38,y,52,18},timeText(a.time),UiTextStyle::Body,a.enabled?AgendaUiColors::Accent:AgendaUiColors::Disabled);
      std::string date=a.daily?"ΚΑΘΕ ΜΕΡΑ":dateText(a.date).substr(0,5);
-     text(s,{94,y,72,36},date,UiTextStyle::Caption,AgendaUiColors::SecondaryText);
+     text(s,{94,y,72,16},date,UiTextStyle::Caption,AgendaUiColors::SecondaryText);
+     const auto label=a.name.empty()?"Ξυπνητήρι":a.name;
+     text(s,{36,y+18,132,16},utf8Prefix(label,15)+(utf8CodePointCount(label)>15?"…":""),UiTextStyle::Caption);
      button(s,{172,y+3,32,30},a.enabled?"ON":"OFF",a.enabled);
    }
    button(s,AlarmLayout::Prev,"<");button(s,AlarmLayout::Next,">");
    text(s,{92,184,56,28},std::to_string(v.alarmPageCount?v.alarmPage+1:0)+"/"+std::to_string(v.alarmPageCount),UiTextStyle::Caption);
    renderDiaryStatus(v,s);return true;
  }
+ button(s,AlarmLayout::Name,v.alarmError==AlarmError::None?(v.alarmDraft.name.empty()?"ΟΝΟΜΑ":utf8Prefix(v.alarmDraft.name,17)):errorText(v.alarmError));
  if(v.alarmDraft.id)button(s,AlarmLayout::Add,"X");
  if(!v.alarmDraft.daily){button(s,AlarmLayout::DatePrevious,"<");button(s,AlarmLayout::DateNext,">");}
  text(s,{54,62,132,26},v.alarmDraft.daily?"ΚΑΘΕ ΜΕΡΑ":dateText(v.alarmDraft.date));
@@ -117,6 +126,7 @@ std::optional<AgendaUiAction> mapAlarmTouch(const AgendaUiView&v,UiPoint p){
    return std::nullopt;
  }
  if(v.screen!=AgendaUiScreen::AlarmEditor)return std::nullopt;
+ if(contains(AlarmLayout::Name,p))return action(T::EditAlarmName);
  if(v.alarmDraft.id&&contains(AlarmLayout::Add,p))return action(T::DeleteAlarm);
  if(!v.alarmDraft.daily&&contains(AlarmLayout::DatePrevious,p))return action(T::AlarmPreviousDay);
  if(!v.alarmDraft.daily&&contains(AlarmLayout::DateNext,p))return action(T::AlarmNextDay);

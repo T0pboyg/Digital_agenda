@@ -2,6 +2,7 @@
 #include "agenda_renderer.h"
 #include <optional>
 namespace AlarmLayout {
+constexpr UiRect Name{44,44,152,18};
 constexpr UiRect Open{104,184,32,28};
 constexpr UiRect Stop{62,156,116,40};
 constexpr UiRect Back{46,16,30,28};

@@ -1,5 +1,6 @@
 #include "alarm_service.h"
 #include "crc32.h"
+#include "utf8.h"
 #include <algorithm>
 #include <limits>
 #include <string_view>
@@ -25,12 +26,14 @@ bool due(const Alarm& a,const DateTime& n) {
 }
 
 bool AlarmService::write(const std::vector<Alarm>& alarms) {
-    std::vector<std::uint8_t> b; put(b,Magic); put(b,1); put(b,static_cast<std::uint32_t>(alarms.size()));
+    std::vector<std::uint8_t> b; put(b,Magic); put(b,2); put(b,static_cast<std::uint32_t>(alarms.size()));
     for(const auto& a:alarms) {
         put(b,a.id); put(b,a.date.year); put(b,a.date.month); put(b,a.date.day);
         put(b,a.time.hour); put(b,a.time.minute);
         put(b,(a.daily?1u:0u)|(a.enabled?2u:0u)|(a.pending?4u:0u));
         put(b,static_cast<std::uint32_t>(a.lastFiredDay+1));
+        put(b,static_cast<std::uint32_t>(a.name.size()));
+        b.insert(b.end(),a.name.begin(),a.name.end());
     }
     put(b,checksum(b,b.size()));
     if(storage_.write(b)!=ByteStorageError::None) { error_=AlarmError::WriteFailed; return false; }
@@ -43,12 +46,15 @@ bool AlarmService::load() {
     if(r.error!=ByteStorageError::None) { error_=AlarmError::ReadFailed; return false; }
     const auto& b=r.bytes;
     auto invalid=[this](){error_=AlarmError::InvalidData; return false;};
-    if(b.size()<16 || get(b,0)!=Magic || get(b,4)!=1) return invalid();
+    if(b.size()<16 || get(b,0)!=Magic || (get(b,4)!=1 && get(b,4)!=2)) return invalid();
+    const auto version=get(b,4);
     const auto count=get(b,8);
-    if(count>MaxAlarms || b.size()!=16+32*count || checksum(b,b.size()-4)!=get(b,b.size()-4)) return invalid();
+    if(count>MaxAlarms || (version==1 && b.size()!=16+32*count) || checksum(b,b.size()-4)!=get(b,b.size()-4)) return invalid();
     std::vector<Alarm> loaded;
+    std::size_t o=12;
     for(std::size_t i=0;i<count;++i) {
-        const std::size_t o=12+32*i; Alarm a;
+        if(o>b.size()-4 || b.size()-4-o<32) return invalid();
+        Alarm a;
         a.id=get(b,o); const auto year=get(b,o+4), month=get(b,o+8), day=get(b,o+12);
         const auto hour=get(b,o+16), min=get(b,o+20), flags=get(b,o+24), fired=get(b,o+28);
         if(a.id==0 || year>2099 || month>12 || day>31 || hour>23 || min>59 || flags>7 || fired>static_cast<unsigned>(serialDay({2099,12,31})+1)) return invalid();
@@ -57,14 +63,23 @@ bool AlarmService::load() {
         a.daily=flags&1; a.enabled=flags&2; a.pending=flags&4; a.lastFiredDay=static_cast<int>(fired)-1;
         if(!isValidDate(a.date) || (a.pending && (!a.enabled || a.lastFiredDay<0))) return invalid();
         if(std::any_of(loaded.begin(),loaded.end(),[&](const Alarm& x){return x.id==a.id;})) return invalid();
+        o+=32;
+        if(version==2) {
+            if(b.size()-4-o<4) return invalid();
+            const auto size=get(b,o);o+=4;
+            if(size>MaxNameLength*4 || size>b.size()-4-o) return invalid();
+            a.name.assign(reinterpret_cast<const char*>(b.data()+o),size);o+=size;
+            if(!isValidUtf8(a.name) || utf8CodePointCount(a.name)>MaxNameLength) return invalid();
+        }
         loaded.push_back(a);
     }
+    if(o!=b.size()-4) return invalid();
     alarms_=std::move(loaded); ready_=true; dirty_=false; error_=AlarmError::None; return true;
 }
 
 bool AlarmService::save(Alarm a,const DateTime& now) {
     if(!ready_ || dirty_ || ringing()) {error_=AlarmError::NotReady; return false;}
-    if(!valid(now) || !isValidDate(a.date) || !isValidTime(a.time) ||
+    if(!isValidUtf8(a.name) || utf8CodePointCount(a.name)>MaxNameLength || !valid(now) || !isValidDate(a.date) || !isValidTime(a.time) ||
         (a.enabled && !a.daily && serialMinute({a.date,a.time})<=serialMinute(now))) {
         error_=AlarmError::InvalidAlarm; return false;
     }

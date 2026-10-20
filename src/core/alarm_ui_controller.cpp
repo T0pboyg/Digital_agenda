@@ -1,5 +1,6 @@
 #include "alarm_ui_controller.h"
 #include <algorithm>
+#include "utf8.h"
 
 void AlarmUiController::clampPage() {
     if(!alarms_) return;
@@ -10,6 +11,24 @@ bool AlarmUiController::handle(const AgendaUiAction& a,const std::optional<DateT
     if(!alarms_) return false;
     if(a.type==AgendaUiActionType::OpenAlarms && allowOpen) {page_=Page::List;clampPage();return true;}
     if(!active()) return false;
+    if(page_==Page::Name) {
+        using T=AgendaUiActionType;
+        switch(a.type) {
+        case T::T9Digit: {
+            auto next=nameInput_;next.pressDigit(a.digit,a.timestampMilliseconds);
+            if(utf8CodePointCount(next.text())<=AlarmService::MaxNameLength) nameInput_=std::move(next);
+            break;
+        }
+        case T::ToggleT9Language:nameInput_.toggleLanguage();break;
+        case T::ToggleT9Mode:nameInput_.toggleMode();break;
+        case T::ToggleT9Case:nameInput_.toggleCase();break;
+        case T::T9Backspace:nameInput_.backspace();break;
+        case T::EditorNext:nameInput_.commitPending();draft_.name=nameInput_.text();page_=Page::Editor;break;
+        case T::Back:case T::EditorBack:page_=Page::Editor;break;
+        default:break;
+        }
+        return true;
+    }
     if(confirmDelete_) {
         if(a.type==AgendaUiActionType::CancelAlarmDelete) confirmDelete_=false;
         if(a.type==AgendaUiActionType::ConfirmAlarmDelete) {
@@ -43,6 +62,8 @@ bool AlarmUiController::handle(const AgendaUiAction& a,const std::optional<DateT
         return true;
     }
     switch(a.type) {
+    case AgendaUiActionType::EditAlarmName:
+        nameInput_=T9Engine{};nameInput_.toggleLanguage();nameInput_.setText(draft_.name);page_=Page::Name;break;
     case AgendaUiActionType::AlarmPreviousDay: if(auto d=previousDate(draft_.date)) draft_.date=*d;break;
     case AgendaUiActionType::AlarmNextDay: if(auto d=nextDate(draft_.date)) draft_.date=*d;break;
     case AgendaUiActionType::AlarmPreviousHour: draft_.time.hour=(draft_.time.hour+23)%24;break;
@@ -61,10 +82,15 @@ bool AlarmUiController::handle(const AgendaUiAction& a,const std::optional<DateT
 void AlarmUiController::populate(AgendaUiView& v) const {
     if(!alarms_) return;
     v.alarmError=error_==AlarmError::None?alarms_->error():error_;
+    for(const auto& alarm:alarms_->alarms()) if(alarm.pending) v.ringingAlarmNames.push_back(alarm.name.empty()?"Ξυπνητήρι":alarm.name);
     if(!active()) return;
     // Agenda overlays stay underneath the alarm pages and resume when they close.
     v.overlay=AgendaUiOverlay::None;
     v.screen=page_==Page::List?AgendaUiScreen::AlarmList:AgendaUiScreen::AlarmEditor;
+    if(page_==Page::Name) {
+        v.screen=AgendaUiScreen::EditorText;v.alarmNameEditor=true;v.editor.text=nameInput_.text();
+        v.t9Language=nameInput_.language();v.t9Mode=nameInput_.mode();v.t9Uppercase=nameInput_.uppercase();
+    }
     v.alarmDraft=draft_;v.alarmConfirmDelete=confirmDelete_;v.alarmPage=pageIndex_;
     v.alarmPageCount=(alarms_->alarms().size()+2)/3;
     for(std::size_t i=pageIndex_*3;i<alarms_->alarms().size() && i<(pageIndex_+1)*3;++i) v.alarms.push_back(alarms_->alarms()[i]);

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <string>
 #include "byte_storage.h"
 #include "date_time.h"
 
@@ -13,6 +14,7 @@ struct Alarm {
     bool enabled = true;
     int lastFiredDay = -1;
     bool pending = false;
+    std::string name;
 };
 enum class AlarmError { None, NotReady, ReadFailed, InvalidData, WriteFailed, InvalidAlarm, Full, NotFound };
 
@@ -20,6 +22,7 @@ enum class AlarmError { None, NotReady, ReadFailed, InvalidData, WriteFailed, In
 class AlarmService {
 public:
     static constexpr std::size_t MaxAlarms = 24;
+    static constexpr std::size_t MaxNameLength = 30;
     explicit AlarmService(ByteStorage& storage) : storage_(storage) {}
     bool load();
     bool save(Alarm alarm, const DateTime& now);
